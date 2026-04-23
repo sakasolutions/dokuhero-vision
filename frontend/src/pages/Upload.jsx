@@ -138,6 +138,12 @@ function Upload() {
   };
 
   const addPage = (file) => {
+    if (!file) {
+      return;
+    }
+    setResult(null);
+    setStatus('idle');
+    setErrorMessage('Bitte versuche es erneut.');
     const id = Date.now() + Math.random();
     const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : '';
     setPages((prev) => [...prev, { file, preview, id }]);
@@ -151,16 +157,6 @@ function Upload() {
       }
       return prev.filter((p) => p.id !== id);
     });
-  };
-
-  const onPickFile = (selectedFile) => {
-    if (!selectedFile) {
-      return;
-    }
-    setResult(null);
-    setStatus('idle');
-    setErrorMessage('Bitte versuche es erneut.');
-    addPage(selectedFile);
   };
 
   const handleUpload = async (forceUpload = false) => {
@@ -403,23 +399,15 @@ function Upload() {
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <label className="btn-secondary" style={{ flex: 1 }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ flex: 1 }}
+                      onClick={() => cameraInputRef.current?.click()}
+                    >
                       <IconCamera color="#6366f1" />
                       <span>Kamera</span>
-                      <input
-                        ref={cameraInputRef}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                          if (e.target.files[0]) {
-                            onPickFile(e.target.files[0]);
-                            e.target.value = '';
-                          }
-                        }}
-                      />
-                    </label>
+                    </button>
 
                     <label className="btn-secondary" style={{ flex: 1 }}>
                       <IconFile color="#6366f1" />
@@ -431,13 +419,26 @@ function Upload() {
                         style={{ display: 'none' }}
                         onChange={(e) => {
                           if (e.target.files[0]) {
-                            onPickFile(e.target.files[0]);
-                            e.target.value = '';
+                            addPage(e.target.files[0]);
                           }
+                          e.target.value = '';
                         }}
                       />
                     </label>
                   </div>
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      if (e.target.files[0]) {
+                        addPage(e.target.files[0]);
+                      }
+                      e.target.value = '';
+                    }}
+                  />
                 </>
               ) : (
                 <>
@@ -524,16 +525,6 @@ function Upload() {
                       </div>
                     ))}
                   </div>
-                  <p
-                    style={{
-                      margin: '6px 0 0',
-                      fontSize: '12px',
-                      color: '#9ca3af',
-                      textAlign: 'center',
-                    }}
-                  >
-                    Dokument wird automatisch erkannt und zugeschnitten
-                  </p>
                   <input
                     ref={addPageInputRef}
                     type="file"
@@ -541,9 +532,9 @@ function Upload() {
                     style={{ display: 'none' }}
                     onChange={(e) => {
                       if (e.target.files[0]) {
-                        onPickFile(e.target.files[0]);
-                        e.target.value = '';
+                        addPage(e.target.files[0]);
                       }
+                      e.target.value = '';
                     }}
                   />
                   <button
