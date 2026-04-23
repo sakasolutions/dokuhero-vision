@@ -8,26 +8,52 @@ async function extractText(imageBuffer, mimeType) {
   try {
     const base64 = imageBuffer.toString('base64');
     const safeMimeType = mimeType === 'image/heic' ? 'image/jpeg' : mimeType;
+    const isPdf = mimeType === 'application/pdf';
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: { url: `data:${safeMimeType};base64,${base64}` },
-            },
-            {
-              type: 'text',
-              text: 'Extrahiere den gesamten Text aus diesem Dokument. Gib nur den rohen Text zurück, keine Erklärungen.',
-            },
-          ],
-        },
-      ],
-      max_tokens: 2000,
-    });
+    const response = await openai.chat.completions.create(
+      isPdf
+        ? {
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'file',
+                    file: {
+                      filename: 'document.pdf',
+                      file_data: `data:application/pdf;base64,${base64}`,
+                    },
+                  },
+                  {
+                    type: 'text',
+                    text: 'Extrahiere den gesamten Text aus diesem Dokument. Gib nur den rohen Text zurück, keine Erklärungen.',
+                  },
+                ],
+              },
+            ],
+            max_tokens: 2000,
+          }
+        : {
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'image_url',
+                    image_url: { url: `data:${safeMimeType};base64,${base64}` },
+                  },
+                  {
+                    type: 'text',
+                    text: 'Extrahiere den gesamten Text aus diesem Dokument. Gib nur den rohen Text zurück, keine Erklärungen.',
+                  },
+                ],
+              },
+            ],
+            max_tokens: 2000,
+          }
+    );
 
     const text = response?.choices?.[0]?.message?.content || '';
 
