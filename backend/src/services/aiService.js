@@ -11,7 +11,7 @@ function fallbackResult() {
 }
 
 function sanitizeFilename(filename) {
-  return filename.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
+  return filename.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
 }
 
 async function analyzeDocument(ocrText) {
@@ -72,7 +72,11 @@ REGELN für dateiname:
 WICHTIG: 
 - Lieber eine spezifische Kategorie als Sonstiges
 - Absender immer auf Deutsch
-- Wenn Datum nicht erkennbar: aktuelles Jahr + aktueller Monat`,
+- Wenn Datum nicht erkennbar: aktuelles Jahr + aktueller Monat
+- Format ist IMMER exakt: YYYY-MM_Typ_Absender
+- Der Absender steht IMMER als letzter Teil im dateiname
+- Gute Beispiele: 2026-04_Rechnung_IONOS, 2026-04_Rechnung_Canva, 2026-04_Kontoauszug_Sparkasse
+- Schlechte Beispiele: 2026-04_Rechnung, 2026-04_IONOS_Rechnung`,
         },
         {
           role: 'user',

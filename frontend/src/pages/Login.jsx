@@ -1,4 +1,16 @@
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+
 function Login() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const existingToken = localStorage.getItem('dokuhero_token');
+    if (existingToken) {
+      navigate('/upload');
+    }
+  }, [navigate]);
+
   const handleGoogleLogin = () => {
     window.location.href = 'https://dokuhero.de/api/auth/google';
   };

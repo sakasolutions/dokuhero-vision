@@ -59,13 +59,18 @@ class GoogleDriveProvider extends StorageProvider {
 
   async uploadFile(fileBuffer, folder, filename, mimeType) {
     const mainFolderId = await this.getOrCreateMainFolder();
-    const folderId = await this.createFolderIfNotExists(folder, mainFolderId);
+    const categoryFolderId = await this.createFolderIfNotExists(folder, mainFolderId);
+    const filenameParts = (filename || '').split('_').filter(Boolean);
+    const anbieter = filenameParts.length >= 3 ? filenameParts[filenameParts.length - 1] : '';
+    const targetFolderId = anbieter
+      ? await this.createFolderIfNotExists(anbieter, categoryFolderId)
+      : categoryFolderId;
     const stream = Readable.from(fileBuffer);
 
     const uploadResponse = await this.drive.files.create({
       resource: {
         name: `${filename}.pdf`,
-        parents: [folderId],
+        parents: [targetFolderId],
       },
       media: {
         mimeType,
