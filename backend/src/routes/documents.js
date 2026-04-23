@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
+const PDFDocument = require('pdfkit');
 
 const requireAuth = require('../middleware/auth');
 const ocrService = require('../services/ocrService');
@@ -43,6 +44,46 @@ const uploadFields = upload.fields([
   { name: 'document', maxCount: 1 },
   { name: 'pages', maxCount: 10 },
 ]);
+
+/**
+ * @param {import('multer').File[]} files
+ * @returns {Promise<Buffer>}
+ */
+async function imagesToPdf(files) {
+  const imageBuffers = [];
+  for (const file of files) {
+    const mime = (file.mimetype || '').toLowerCase();
+    if (mime === 'image/heic' || mime === 'image/heif') {
+      imageBuffers.push(await sharp(file.buffer).jpeg({ quality: 90 }).toBuffer());
+    } else {
+      imageBuffers.push(file.buffer);
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument();
+    const chunks = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    try {
+      imageBuffers.forEach((buf, index) => {
+        if (index > 0) {
+          doc.addPage();
+        }
+        doc.image(buf, 0, 0, {
+          fit: [doc.page.width, doc.page.height],
+          align: 'center',
+          valign: 'center',
+        });
+      });
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
 
 /**
  * Liefert reinen Fließtext fürs Modell; gleiche sharp-Vorverarbeitung wie Single-Upload.
@@ -173,7 +214,26 @@ router.post('/upload', requireAuth, (req, res) => {
       const files = pageFiles;
       const texts = await Promise.all(files.map((f) => ocrFileToText(f)));
       const combinedText = texts.map((t, i) => `--- Seite ${i + 1} ---\n${t}`).join('\n\n');
-      const primaryFile = files[0];
+
+      const allImages = files.every((f) => (f.mimetype || '').toLowerCase().startsWith('image/'));
+      let primaryFile = files[0];
+
+      if (files.length > 1 && allImages) {
+        try {
+          const pdfBuffer = await imagesToPdf(files);
+          primaryFile = {
+            buffer: pdfBuffer,
+            mimetype: 'application/pdf',
+            originalname: 'document.pdf',
+            size: pdfBuffer.length,
+          };
+        } catch (pdfErr) {
+          return res.status(500).json({
+            error: pdfErr?.message || 'PDF aus Bildern konnte nicht erzeugt werden',
+          });
+        }
+      }
+
       return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload);
     }
 
