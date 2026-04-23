@@ -1,6 +1,6 @@
 function Login() {
   const handleGoogleLogin = () => {
-    window.location.href = 'http://localhost:3001/api/auth/google';
+    window.location.href = 'https://dokuhero.de/api/auth/google';
   };
 
   return (
