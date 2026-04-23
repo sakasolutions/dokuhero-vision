@@ -119,7 +119,7 @@ function Upload() {
     }
   };
 
-  const handleUpload = async () => {
+  const handleUpload = async (forceUpload = false) => {
     if (!file || !token) {
       return;
     }
@@ -134,6 +134,9 @@ function Upload() {
     const uploadDocument = async (accessToken) => {
       const formData = new FormData();
       formData.append('document', file);
+      if (forceUpload) {
+        formData.append('forceUpload', 'true');
+      }
 
       return api.post('/api/documents/upload', formData, {
         headers: {
@@ -477,14 +480,45 @@ function Upload() {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => resetUpload(false)}
-              className="btn-outline"
-              style={{ marginTop: '16px', width: '100%', height: '48px' }}
-            >
-              Weiteres Dokument
-            </button>
+            {status === 'duplicate' ? (
+              <div style={{ marginTop: '16px', display: 'grid', gap: '10px' }}>
+                {result.storage?.webViewLink ? (
+                  <a
+                    href={result.storage.webViewLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      color: '#6366f1',
+                      textDecoration: 'none',
+                      height: '44px',
+                      display: 'grid',
+                      placeItems: 'center',
+                      border: '1px solid #262626',
+                      borderRadius: '8px',
+                    }}
+                  >
+                    Vorhandene Datei öffnen →
+                  </a>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => handleUpload(true)}
+                  className="btn-outline"
+                  style={{ width: '100%', height: '48px' }}
+                >
+                  Trotzdem neu ablegen
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => resetUpload(false)}
+                className="btn-outline"
+                style={{ marginTop: '16px', width: '100%', height: '48px' }}
+              >
+                Weiteres Dokument
+              </button>
+            )}
           </section>
         )}
       </div>

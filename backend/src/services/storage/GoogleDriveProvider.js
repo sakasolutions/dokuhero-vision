@@ -57,7 +57,7 @@ class GoogleDriveProvider extends StorageProvider {
     return createResponse.data.id;
   }
 
-  async uploadFile(fileBuffer, folder, filename, mimeType) {
+  async uploadFile(fileBuffer, folder, filename, mimeType, force = false) {
     const mainFolderId = await this.getOrCreateMainFolder();
     const categoryFolderId = await this.createFolderIfNotExists(folder, mainFolderId);
     const filenameParts = (filename || '').split('_').filter(Boolean);
@@ -65,22 +65,25 @@ class GoogleDriveProvider extends StorageProvider {
     const providerFolderId = anbieter
       ? await this.createFolderIfNotExists(anbieter, categoryFolderId)
       : categoryFolderId;
-    const targetFileName = `${filename}.pdf`;
+    const normalizedBaseName = force ? `${filename}_${Date.now()}` : filename;
+    const targetFileName = `${normalizedBaseName}.pdf`;
 
-    const existingFileResponse = await this.drive.files.list({
-      q: `name='${targetFileName}' and '${providerFolderId}' in parents and trashed=false`,
-      fields: 'files(id, name, webViewLink)',
-      pageSize: 1,
-    });
+    if (!force) {
+      const existingFileResponse = await this.drive.files.list({
+        q: `name='${targetFileName}' and '${providerFolderId}' in parents and trashed=false`,
+        fields: 'files(id, name, webViewLink)',
+        pageSize: 1,
+      });
 
-    const existingFile = existingFileResponse.data.files?.[0];
-    if (existingFile) {
-      return {
-        fileId: existingFile.id,
-        fileName: existingFile.name,
-        webViewLink: existingFile.webViewLink,
-        duplicate: true,
-      };
+      const existingFile = existingFileResponse.data.files?.[0];
+      if (existingFile) {
+        return {
+          fileId: existingFile.id,
+          fileName: existingFile.name,
+          webViewLink: existingFile.webViewLink,
+          duplicate: true,
+        };
+      }
     }
 
     const stream = Readable.from(fileBuffer);

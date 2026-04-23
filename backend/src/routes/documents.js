@@ -57,6 +57,7 @@ router.post('/upload', requireAuth, (req, res) => {
       return res.status(400).json({ error: 'Keine Datei hochgeladen' });
     }
 
+    const forceUpload = req.body?.forceUpload === true || req.body?.forceUpload === 'true';
     let ocrText = '';
 
     try {
@@ -75,7 +76,8 @@ router.post('/upload', requireAuth, (req, res) => {
           req.file.buffer,
           analysis.ordner,
           analysis.dateiname,
-          req.file.mimetype
+          req.file.mimetype,
+          forceUpload
         );
 
         return res.json({
@@ -96,7 +98,7 @@ router.post('/upload', requireAuth, (req, res) => {
             fileName: storageResult.fileName,
             webViewLink: storageResult.webViewLink,
             duplicate: Boolean(storageResult.duplicate),
-            path: `${analysis.ordner}/${analysis.dateiname}.pdf`,
+            path: `${analysis.ordner}/${storageResult.fileName || `${analysis.dateiname}.pdf`}`,
           },
         });
       } catch (uploadError) {
