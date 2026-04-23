@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 function GoogleIcon() {
   return (
@@ -90,9 +90,34 @@ function Login() {
           ))}
         </div>
 
-        <p style={{ margin: '24px 0 0', fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>
-          Durch Anmelden stimmst du unseren Nutzungsbedingungen zu.
-        </p>
+        <div style={{ margin: '24px 0 0', textAlign: 'center' }}>
+          <p style={{ margin: 0, fontSize: '12px', color: '#9ca3af' }}>
+            Durch Anmelden stimmst du unseren Nutzungsbedingungen zu.
+          </p>
+          <div
+            className="login-footer-legal"
+            style={{
+              marginTop: '8px',
+              fontSize: '13px',
+              color: '#9ca3af',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <Link to="/impressum" className="login-footer-link">
+              Impressum
+            </Link>
+            <span style={{ color: '#d1d5db' }} aria-hidden>
+              ·
+            </span>
+            <Link to="/datenschutz" className="login-footer-link">
+              Datenschutz
+            </Link>
+          </div>
+        </div>
       </section>
 
       <style>{`
@@ -116,6 +141,13 @@ function Login() {
           background: #4f46e5;
           transform: translateY(-1px);
           box-shadow: 0 4px 12px rgba(99,102,241,0.4);
+        }
+        .login-footer-link {
+          color: #9ca3af;
+          text-decoration: none;
+        }
+        .login-footer-link:hover {
+          color: #6366f1;
         }
       `}</style>
     </main>

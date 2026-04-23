@@ -389,7 +389,22 @@ function Upload() {
                       }}
                     />
                   ) : null}
-                  <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#6b7280', textAlign: 'center' }}>{file.name}</p>
+                  <p
+                    style={{
+                      margin: '8px 0 0',
+                      fontSize: '13px',
+                      color: '#6b7280',
+                      textAlign: 'center',
+                      maxWidth: '100%',
+                      padding: '0 20px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    {file.name}
+                  </p>
                 </div>
               )}
             </section>
@@ -494,7 +509,20 @@ function Upload() {
             <h2 style={{ margin: '0 0 4px', fontSize: '22px', fontWeight: 700, color: '#111827' }}>
               {status === 'success' ? 'Erfolgreich abgelegt!' : 'Bereits gespeichert'}
             </h2>
-            <p style={{ margin: '0 0 12px', color: '#6b7280', fontSize: '14px', fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+            <p
+              style={{
+                margin: '0 0 12px',
+                color: '#6b7280',
+                fontSize: '14px',
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                maxWidth: '100%',
+                padding: '0 20px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                boxSizing: 'border-box',
+              }}
+            >
               {result.storage?.fileName || result.storage?.path || '-'}
             </p>
             {status === 'duplicate' && (
@@ -504,24 +532,36 @@ function Upload() {
             )}
 
             <div style={styles.infoCard}>
-              <p style={{ margin: '0 0 8px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+              <p style={styles.infoRow}>
                 <span style={styles.infoLabel}>Kategorie</span>
-                <span style={styles.infoValue}>{result.analysis?.ordner || '-'}</span>
+                <span style={styles.infoValueText}>{result.analysis?.ordner || '-'}</span>
               </p>
-              <p style={{ margin: '0 0 8px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+              <p style={styles.infoRow}>
                 <span style={styles.infoLabel}>Datei</span>
-                <span style={{ ...styles.infoValue, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                <span
+                  style={{
+                    ...styles.infoValueFile,
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  }}
+                >
                   {result.storage?.path || '-'}
                 </span>
               </p>
-              <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+              <p style={styles.infoRowLast}>
                 <span style={styles.infoLabel}>Google Drive</span>
                 {result.storage?.webViewLink ? (
-                  <a href={result.storage.webViewLink} target="_blank" rel="noreferrer" style={{ color: '#6366f1', textDecoration: 'none', fontSize: '13px', fontWeight: 600 }}>
+                  <a
+                    href={result.storage.webViewLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={styles.infoLink}
+                  >
                     Öffnen →
                   </a>
                 ) : (
-                  <span style={{ color: '#dc2626', fontSize: '13px' }}>{result.storage?.error || 'Nicht verfügbar'}</span>
+                  <span style={styles.infoValueError}>
+                    {result.storage?.error || 'Nicht verfügbar'}
+                  </span>
                 )}
               </p>
             </div>
@@ -721,11 +761,64 @@ const styles = {
     color: '#9ca3af',
     fontSize: '13px',
     fontWeight: 500,
+    flexShrink: 0,
   },
-  infoValue: {
+  infoRow: {
+    margin: '0 0 8px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '12px',
+    minWidth: 0,
+    padding: '8px 0',
+    borderBottom: '1px solid #f3f4f6',
+  },
+  infoRowLast: {
+    margin: 0,
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '12px',
+    minWidth: 0,
+    padding: '8px 0 0',
+  },
+  infoValueText: {
     color: '#111827',
     fontSize: '13px',
     fontWeight: 600,
+    minWidth: 0,
+    maxWidth: '65%',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    textAlign: 'right',
+  },
+  infoValueFile: {
+    color: '#111827',
+    fontSize: '13px',
+    fontWeight: 600,
+    minWidth: 0,
+    maxWidth: '60%',
+    wordBreak: 'break-all',
+    textAlign: 'right',
+  },
+  infoLink: {
+    color: '#6366f1',
+    textDecoration: 'none',
+    fontSize: '13px',
+    fontWeight: 600,
+    flexShrink: 0,
+  },
+  infoValueError: {
+    color: '#dc2626',
+    fontSize: '13px',
+    fontWeight: 600,
+    minWidth: 0,
+    maxWidth: '65%',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    textAlign: 'right',
   },
 };
 
