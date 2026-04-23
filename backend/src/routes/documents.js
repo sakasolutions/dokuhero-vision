@@ -45,38 +45,101 @@ const uploadFields = upload.fields([
   { name: 'pages', maxCount: 10 },
 ]);
 
+function sanitizeOcrTextForPdf(text) {
+  return String(text || '')
+    .replace(/\0/g, '')
+    .slice(0, 500000);
+}
+
 /**
- * @param {import('multer').File[]} files
+ * Einseitiges PDF: Originalbild vollflächig, OCR-Text unsichtbar darüber (durchsuchbar).
+ * @param {Buffer} imageBuffer
+ * @param {string} mimeType
+ * @param {string} ocrText
  * @returns {Promise<Buffer>}
  */
-async function imagesToPdf(files) {
-  const imageBuffers = [];
-  for (const file of files) {
-    const mime = (file.mimetype || '').toLowerCase();
-    if (mime === 'image/heic' || mime === 'image/heif') {
-      imageBuffers.push(await sharp(file.buffer).jpeg({ quality: 90 }).toBuffer());
-    } else {
-      imageBuffers.push(file.buffer);
-    }
+async function imageBufferToSearchablePdf(imageBuffer, mimeType, ocrText) {
+  const mime = (mimeType || '').toLowerCase();
+  let displayBuffer = imageBuffer;
+  if (mime === 'image/heic' || mime === 'image/heif') {
+    displayBuffer = await sharp(imageBuffer).jpeg({ quality: 95 }).toBuffer();
   }
 
+  const meta = await sharp(displayBuffer).metadata();
+  const w = meta.width || 612;
+  const h = meta.height || 792;
+  const sanitized = sanitizeOcrTextForPdf(ocrText);
+
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument();
+    const doc = new PDFDocument({ size: [w, h], margin: 0 });
     const chunks = [];
     doc.on('data', (chunk) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
     try {
-      imageBuffers.forEach((buf, index) => {
+      doc.image(displayBuffer, 0, 0, { width: w, height: h });
+      doc.save();
+      doc.opacity(0);
+      doc.fillOpacity(0);
+      doc.font('Helvetica').fontSize(1);
+      doc.fillColor('#000000');
+      doc.text(sanitized, 0, 0, { width: w, height: h, lineGap: 0 });
+      doc.restore();
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+/**
+ * Mehrseitiges PDF aus Bildern + je Seite OCR-Text (unsichtbar, durchsuchbar).
+ * @param {import('multer').File[]} files
+ * @param {string[]} pageTexts
+ * @returns {Promise<Buffer>}
+ */
+async function imagesToSearchablePdf(files, pageTexts) {
+  const pages = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const mime = (file.mimetype || '').toLowerCase();
+    let buf = file.buffer;
+    if (mime === 'image/heic' || mime === 'image/heif') {
+      buf = await sharp(file.buffer).jpeg({ quality: 95 }).toBuffer();
+    }
+    const meta = await sharp(buf).metadata();
+    pages.push({
+      buffer: buf,
+      text: sanitizeOcrTextForPdf(pageTexts[i] || ''),
+      width: meta.width || 612,
+      height: meta.height || 792,
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: [pages[0].width, pages[0].height],
+      margin: 0,
+    });
+    const chunks = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    try {
+      pages.forEach((p, index) => {
         if (index > 0) {
-          doc.addPage();
+          doc.addPage({ size: [p.width, p.height] });
         }
-        doc.image(buf, 0, 0, {
-          fit: [doc.page.width, doc.page.height],
-          align: 'center',
-          valign: 'center',
-        });
+        doc.image(p.buffer, 0, 0, { width: p.width, height: p.height });
+        doc.save();
+        doc.opacity(0);
+        doc.fillOpacity(0);
+        doc.font('Helvetica').fontSize(1);
+        doc.fillColor('#000000');
+        doc.text(p.text, 0, 0, { width: p.width, height: p.height, lineGap: 0 });
+        doc.restore();
       });
       doc.end();
     } catch (err) {
@@ -133,19 +196,40 @@ async function respondWithAnalysisAndStorage(req, res, primaryFile, ocrText, for
     const analysis = await aiService.analyzeDocument(ocrText);
     const provider = new GoogleDriveProvider(req.accessToken);
 
+    let fileForUpload = primaryFile;
+    const uploadMime = (primaryFile.mimetype || '').toLowerCase();
+    if (uploadMime.startsWith('image/')) {
+      try {
+        const pdfBuffer = await imageBufferToSearchablePdf(
+          primaryFile.buffer,
+          primaryFile.mimetype,
+          ocrText || ''
+        );
+        const baseName = (primaryFile.originalname || 'document').replace(/\.[^.]+$/i, '') || 'document';
+        fileForUpload = {
+          buffer: pdfBuffer,
+          mimetype: 'application/pdf',
+          originalname: `${baseName}.pdf`,
+          size: pdfBuffer.length,
+        };
+      } catch (_pdfErr) {
+        fileForUpload = primaryFile;
+      }
+    }
+
     try {
       const storageResult = await provider.uploadFile(
-        primaryFile.buffer,
+        fileForUpload.buffer,
         analysis.ordner,
         analysis.dateiname,
-        primaryFile.mimetype,
+        fileForUpload.mimetype,
         forceUpload
       );
 
       return res.json({
         success: true,
         message: storageResult.duplicate ? 'Dokument bereits vorhanden' : 'Dokument erfolgreich abgelegt',
-        file: buildJsonResponseFileMeta(primaryFile),
+        file: buildJsonResponseFileMeta(fileForUpload),
         analysis: {
           ordner: analysis.ordner,
           dateiname: analysis.dateiname,
@@ -163,7 +247,7 @@ async function respondWithAnalysisAndStorage(req, res, primaryFile, ocrText, for
       return res.json({
         success: true,
         message: 'Dokument erfolgreich abgelegt',
-        file: buildJsonResponseFileMeta(primaryFile),
+        file: buildJsonResponseFileMeta(fileForUpload),
         analysis: {
           ordner: analysis.ordner,
           dateiname: analysis.dateiname,
@@ -220,7 +304,7 @@ router.post('/upload', requireAuth, (req, res) => {
 
       if (files.length > 1 && allImages) {
         try {
-          const pdfBuffer = await imagesToPdf(files);
+          const pdfBuffer = await imagesToSearchablePdf(files, texts);
           primaryFile = {
             buffer: pdfBuffer,
             mimetype: 'application/pdf',
