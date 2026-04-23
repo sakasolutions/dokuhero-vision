@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ReactCrop, { centerCrop, convertToPixelCrop, makeAspectCrop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
 
 import api from '../services/api';
 
@@ -110,28 +112,143 @@ function Upload() {
   const [errorMessage, setErrorMessage] = useState('Bitte versuche es erneut.');
   const [progressStep, setProgressStep] = useState('step1_done');
 
+  const [imgSrc, setImgSrc] = useState('');
+  const [crop, setCrop] = useState();
+  const [completedCrop, setCompletedCrop] = useState();
+  const [showCropper, setShowCropper] = useState(false);
+  const imgRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const fileInputRef = useRef(null);
+
   const handleLogout = () => {
     localStorage.removeItem('dokuhero_token');
     localStorage.removeItem('dokuhero_refresh_token');
     navigate('/');
   };
 
-  const handleFileSelect = (selectedFile) => {
+  const revokePreviewIfBlob = (url) => {
+    if (url && String(url).startsWith('blob:')) {
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const onFileSelected = (selectedFile) => {
     if (!selectedFile) {
       return;
     }
 
-    setFile(selectedFile);
     setResult(null);
     setStatus('idle');
     setErrorMessage('Bitte versuche es erneut.');
 
-    if (selectedFile.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = () => setPreview(reader.result || '');
-      reader.readAsDataURL(selectedFile);
-    } else {
+    if (selectedFile.type === 'application/pdf') {
+      setShowCropper(false);
+      setImgSrc('');
+      setCrop(undefined);
+      setCompletedCrop(undefined);
+      revokePreviewIfBlob(preview);
+      setFile(selectedFile);
       setPreview('');
+      return;
+    }
+
+    if (selectedFile.type.startsWith('image/')) {
+      setFile(null);
+      revokePreviewIfBlob(preview);
+      setPreview('');
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImgSrc((reader.result || ''));
+        setShowCropper(true);
+      };
+      reader.readAsDataURL(selectedFile);
+    }
+  };
+
+  const onImageLoad = (e) => {
+    const img = e.currentTarget;
+    const { width, height, naturalWidth, naturalHeight } = img;
+    if (!width || !height) {
+      return;
+    }
+    const imageAspect = naturalWidth / naturalHeight;
+    const nextCrop = centerCrop(
+      makeAspectCrop({ unit: '%', width: 90 }, imageAspect, width, height),
+      width,
+      height
+    );
+    setCrop(nextCrop);
+    setCompletedCrop(convertToPixelCrop(nextCrop, width, height));
+  };
+
+  const getCroppedBlob = async () => {
+    const image = imgRef.current;
+    if (!image || !completedCrop || completedCrop.width < 1 || completedCrop.height < 1) {
+      return null;
+    }
+
+    const scaleX = image.naturalWidth / image.width;
+    const scaleY = image.naturalHeight / image.height;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return null;
+    }
+
+    const sx = completedCrop.x * scaleX;
+    const sy = completedCrop.y * scaleY;
+    const sw = completedCrop.width * scaleX;
+    const sh = completedCrop.height * scaleY;
+    const pixelWidth = Math.max(1, Math.round(sw));
+    const pixelHeight = Math.max(1, Math.round(sh));
+
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+
+    ctx.drawImage(image, sx, sy, sw, sh, 0, 0, pixelWidth, pixelHeight);
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error('Canvas konnte nicht exportiert werden.'));
+            return;
+          }
+          resolve(new File([blob], 'document.jpg', { type: 'image/jpeg' }));
+        },
+        'image/jpeg',
+        0.92
+      );
+    });
+  };
+
+  const onCropConfirm = async () => {
+    const cropped = await getCroppedBlob();
+    if (!cropped) {
+      return;
+    }
+    setFile(cropped);
+    revokePreviewIfBlob(preview);
+    const nextPreview = URL.createObjectURL(cropped);
+    setPreview(nextPreview);
+    setShowCropper(false);
+    setImgSrc('');
+    setCrop(undefined);
+    setCompletedCrop(undefined);
+  };
+
+  const onCropCancel = () => {
+    setShowCropper(false);
+    setImgSrc('');
+    setCrop(undefined);
+    setCompletedCrop(undefined);
+    setFile(null);
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = '';
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -231,6 +348,17 @@ function Upload() {
   };
 
   const resetUpload = () => {
+    setShowCropper(false);
+    setImgSrc('');
+    setCrop(undefined);
+    setCompletedCrop(undefined);
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = '';
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    revokePreviewIfBlob(preview);
     setFile(null);
     setPreview('');
     setResult(null);
@@ -332,48 +460,137 @@ function Upload() {
                 boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
               }}
             >
-              <div
-                style={{
-                  border: '2px dashed #d1d5db',
-                  borderRadius: '12px',
-                  padding: '36px 20px',
-                  backgroundColor: '#fafafa',
-                  marginBottom: '20px',
-                }}
-              >
-                <div style={{ marginBottom: '12px', display: 'grid', placeItems: 'center' }}>
-                  <IconCloudUpload />
+              {showCropper ? (
+                <div>
+                  <p
+                    style={{
+                      margin: '0 0 4px',
+                      fontSize: '16px',
+                      fontWeight: 600,
+                      color: '#111827',
+                    }}
+                  >
+                    Dokument zuschneiden
+                  </p>
+                  <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#9ca3af' }}>
+                    Schneide den Rand ab für bessere Erkennung
+                  </p>
+                  {imgSrc ? (
+                    <ReactCrop
+                      crop={crop}
+                      onChange={(_, percentCrop) => setCrop(percentCrop)}
+                      onComplete={(pixelCrop) => setCompletedCrop(pixelCrop)}
+                      style={{ maxHeight: '400px', width: '100%' }}
+                    >
+                      <img
+                        ref={imgRef}
+                        alt="Zum Zuschneiden"
+                        src={imgSrc}
+                        onLoad={onImageLoad}
+                        style={{ maxWidth: '100%', maxHeight: '400px' }}
+                      />
+                    </ReactCrop>
+                  ) : null}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '10px',
+                      marginTop: '16px',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={onCropCancel}
+                      style={{
+                        background: '#fff',
+                        border: '1px solid #e5e7eb',
+                        color: '#374151',
+                        borderRadius: '10px',
+                        height: '48px',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      Neu aufnehmen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onCropConfirm}
+                      style={{
+                        background: '#6366f1',
+                        border: 'none',
+                        color: '#fff',
+                        borderRadius: '10px',
+                        height: '48px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      Zuschnitt bestätigen
+                    </button>
+                  </div>
                 </div>
-                <p style={{ margin: '12px 0 0', fontSize: '17px', color: '#111827', fontWeight: 600 }}>Dokument hochladen</p>
-                <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#9ca3af' }}>JPG, PNG oder PDF — bis 10 MB</p>
-              </div>
+              ) : (
+                <>
+                  <div
+                    style={{
+                      border: '2px dashed #d1d5db',
+                      borderRadius: '12px',
+                      padding: '36px 20px',
+                      backgroundColor: '#fafafa',
+                      marginBottom: '20px',
+                    }}
+                  >
+                    <div style={{ marginBottom: '12px', display: 'grid', placeItems: 'center' }}>
+                      <IconCloudUpload />
+                    </div>
+                    <p style={{ margin: '12px 0 0', fontSize: '17px', color: '#111827', fontWeight: 600 }}>Dokument hochladen</p>
+                    <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#9ca3af' }}>JPG, PNG oder PDF — bis 10 MB</p>
+                  </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <label className="btn-secondary" style={{ flex: 1 }}>
-                  <IconCamera color="#6366f1" />
-                  <span>Kamera</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    style={{ display: 'none' }}
-                    onChange={(event) => handleFileSelect(event.target.files?.[0])}
-                  />
-                </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <label className="btn-secondary" style={{ flex: 1 }}>
+                      <IconCamera color="#6366f1" />
+                      <span>Kamera</span>
+                      <input
+                        ref={cameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          if (e.target.files[0]) {
+                            onFileSelected(e.target.files[0]);
+                          }
+                        }}
+                      />
+                    </label>
 
-                <label className="btn-secondary" style={{ flex: 1 }}>
-                  <IconFile color="#6366f1" />
-                  <span>Datei</span>
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    style={{ display: 'none' }}
-                    onChange={(event) => handleFileSelect(event.target.files?.[0])}
-                  />
-                </label>
-              </div>
+                    <label className="btn-secondary" style={{ flex: 1 }}>
+                      <IconFile color="#6366f1" />
+                      <span>Datei</span>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*,application/pdf"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          if (e.target.files[0]) {
+                            onFileSelected(e.target.files[0]);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
 
-              {file && (
+              {file && !showCropper && (
                 <div style={{ marginTop: '16px', marginBottom: '16px' }}>
                   {preview ? (
                     <img
@@ -601,7 +818,7 @@ function Upload() {
             ) : (
               <button
                 type="button"
-                onClick={() => resetUpload(false)}
+                onClick={resetUpload}
                 className="btn-outline"
                 style={{ marginTop: '16px', width: '100%', height: '48px' }}
               >

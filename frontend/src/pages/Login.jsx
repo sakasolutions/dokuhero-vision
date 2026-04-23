@@ -78,15 +78,7 @@ DokuHero sortiert deine Briefe und Rechnungen automatisch —
 direkt in dein Google Drive.`}
         </p>
 
-        <div
-          style={{
-            background: '#f9fafb',
-            border: '1px solid #e5e7eb',
-            borderRadius: '12px',
-            padding: '16px',
-            marginBottom: '24px',
-          }}
-        >
+        <div style={{ marginBottom: '24px' }}>
           <p
             style={{
               margin: '0 0 12px',
@@ -99,7 +91,7 @@ direkt in dein Google Drive.`}
           >
             So funktioniert&apos;s
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {[
               'Du fotografierst einen Brief, eine Rechnung oder ein Dokument',
               'Unsere KI erkennt automatisch: Typ, Absender und Datum',
@@ -126,29 +118,21 @@ direkt in dein Google Drive.`}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
               <div style={styles.stepNumber}>3</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: '14px',
-                    color: '#374151',
-                    lineHeight: 1.5,
-                    whiteSpace: 'pre-line',
-                  }}
-                >
-                  {`Die Datei landet sortiert in deinem Google Drive —
-z. B. unter DokuHero/Rechnungen/IONOS/2026-04_Rechnung_IONOS.pdf`}
+                <p style={{ margin: 0, fontSize: '14px', color: '#374151', lineHeight: 1.5 }}>
+                  Die Datei landet sortiert in deinem Google Drive — z. B. unter
                 </p>
-                <p
+                <span
                   style={{
-                    margin: '4px 0 0 30px',
+                    display: 'block',
+                    marginTop: '4px',
+                    marginLeft: '28px',
+                    fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace',
                     fontSize: '12px',
                     color: '#9ca3af',
-                    fontStyle: 'italic',
-                    lineHeight: 1.5,
                   }}
                 >
-                  Du findest alles direkt in deiner Google Drive App
-                </p>
+                  DokuHero/Versicherungen/Allianz/2026-03_Rechnung_Allianz.pdf
+                </span>
               </div>
             </div>
           </div>
@@ -283,9 +267,9 @@ const styles = {
     flexShrink: 0,
   },
   stepNumber: {
-    width: '20px',
-    height: '20px',
-    background: '#6366f1',
+    width: '18px',
+    height: '18px',
+    background: '#eef2ff',
     borderRadius: '50%',
     flexShrink: 0,
     display: 'flex',
@@ -293,7 +277,7 @@ const styles = {
     justifyContent: 'center',
     fontSize: '11px',
     fontWeight: 700,
-    color: '#fff',
+    color: '#6366f1',
   },
 };
 
