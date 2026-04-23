@@ -47,21 +47,63 @@ function Upload() {
     setStatus('uploading');
     setResult(null);
 
-    try {
+    const uploadDocument = async (accessToken) => {
       const formData = new FormData();
       formData.append('document', file);
 
-      const response = await api.post('/api/documents/upload', formData, {
+      return api.post('/api/documents/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${accessToken}`,
         },
       });
+    };
 
+    const refreshAccessToken = async () => {
+      const storedRefreshToken = localStorage.getItem('dokuhero_refresh_token');
+      if (!storedRefreshToken) {
+        navigate('/');
+        throw new Error('No refresh token available');
+      }
+
+      const response = await api.post('/api/auth/refresh', {
+        refresh_token: storedRefreshToken,
+      });
+
+      const newToken = response?.data?.access_token;
+      if (!newToken) {
+        navigate('/');
+        throw new Error('Refresh failed');
+      }
+
+      localStorage.setItem('dokuhero_token', newToken);
+      setToken(newToken);
+      return newToken;
+    };
+
+    try {
+      const response = await uploadDocument(token);
       setResult(response.data);
       setStatus('success');
-    } catch (_error) {
-      setStatus('error');
+    } catch (error) {
+      const statusCode = error?.response?.status;
+      const hasNoResponse = !error?.response;
+      const shouldTryRefresh = statusCode === 401 || hasNoResponse;
+
+      if (!shouldTryRefresh) {
+        setStatus('error');
+        return;
+      }
+
+      try {
+        const refreshedToken = await refreshAccessToken();
+        const retryResponse = await uploadDocument(refreshedToken);
+        setResult(retryResponse.data);
+        setStatus('success');
+      } catch (_refreshError) {
+        setStatus('error');
+        navigate('/');
+      }
     }
   };
 
@@ -76,11 +118,16 @@ function Upload() {
   useEffect(() => {
     const currentUrl = new URL(window.location.href);
     const tokenFromUrl = currentUrl.searchParams.get('access_token');
+    const refreshTokenFromUrl = currentUrl.searchParams.get('refresh_token');
 
     if (tokenFromUrl) {
       localStorage.setItem('dokuhero_token', tokenFromUrl);
       setToken(tokenFromUrl);
+      if (refreshTokenFromUrl) {
+        localStorage.setItem('dokuhero_refresh_token', refreshTokenFromUrl);
+      }
       currentUrl.searchParams.delete('access_token');
+      currentUrl.searchParams.delete('refresh_token');
       window.history.replaceState({}, document.title, currentUrl.toString());
       return;
     }
