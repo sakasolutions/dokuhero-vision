@@ -64,9 +64,95 @@ function Login() {
         >
           Schluss mit dem Dokumentenchaos.
         </h1>
-        <p style={{ margin: '0 0 28px', color: '#6b7280', fontSize: '15px', lineHeight: 1.6 }}>
-          Foto scannen — KI erkennt Typ und Absender — automatisch in Google Drive sortiert.
+        <p
+          style={{
+            margin: '0 0 20px',
+            color: '#6b7280',
+            fontSize: '15px',
+            lineHeight: 1.6,
+            whiteSpace: 'pre-line',
+          }}
+        >
+          {`Schluss mit dem Dokumentenstapel auf dem Schreibtisch.
+DokuHero sortiert deine Briefe und Rechnungen automatisch —
+direkt in dein Google Drive.`}
         </p>
+
+        <div
+          style={{
+            background: '#f9fafb',
+            border: '1px solid #e5e7eb',
+            borderRadius: '12px',
+            padding: '16px',
+            marginBottom: '24px',
+          }}
+        >
+          <p
+            style={{
+              margin: '0 0 12px',
+              fontSize: '11px',
+              fontWeight: 600,
+              color: '#9ca3af',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+            }}
+          >
+            So funktioniert&apos;s
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {[
+              'Du fotografierst einen Brief, eine Rechnung oder ein Dokument',
+              'Unsere KI erkennt automatisch: Typ, Absender und Datum',
+            ].map((copy, i) => (
+              <div
+                key={copy}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}
+              >
+                <div style={styles.stepNumber}>{i + 1}</div>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: '14px',
+                    color: '#374151',
+                    lineHeight: 1.5,
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  {copy}
+                </p>
+              </div>
+            ))}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+              <div style={styles.stepNumber}>3</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: '14px',
+                    color: '#374151',
+                    lineHeight: 1.5,
+                    whiteSpace: 'pre-line',
+                  }}
+                >
+                  {`Die Datei landet sortiert in deinem Google Drive —
+z. B. unter DokuHero/Rechnungen/IONOS/2026-04_Rechnung_IONOS.pdf`}
+                </p>
+                <p
+                  style={{
+                    margin: '4px 0 0 30px',
+                    fontSize: '12px',
+                    color: '#9ca3af',
+                    fontStyle: 'italic',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Du findest alles direkt in deiner Google Drive App
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <button type="button" onClick={handleGoogleLogin} className="login-google-button">
           <GoogleIcon />
@@ -195,6 +281,19 @@ const styles = {
     display: 'grid',
     placeItems: 'center',
     flexShrink: 0,
+  },
+  stepNumber: {
+    width: '20px',
+    height: '20px',
+    background: '#6366f1',
+    borderRadius: '50%',
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '11px',
+    fontWeight: 700,
+    color: '#fff',
   },
 };
 
