@@ -11,9 +11,32 @@ class GoogleDriveProvider extends StorageProvider {
     this.drive = google.drive({ version: 'v3', auth: oauth2Client });
   }
 
-  async createFolderIfNotExists(folderName) {
+  async getOrCreateMainFolder() {
     const listResponse = await this.drive.files.list({
-      q: `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+      q: `name='DokuHero' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false`,
+      fields: 'files(id, name)',
+    });
+
+    const existingFolder = listResponse.data.files?.[0];
+    if (existingFolder) {
+      return existingFolder.id;
+    }
+
+    const createResponse = await this.drive.files.create({
+      resource: {
+        name: 'DokuHero',
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: ['root'],
+      },
+      fields: 'id',
+    });
+
+    return createResponse.data.id;
+  }
+
+  async createFolderIfNotExists(folderName, parentId) {
+    const listResponse = await this.drive.files.list({
+      q: `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`,
       fields: 'files(id, name)',
     });
 
@@ -26,6 +49,7 @@ class GoogleDriveProvider extends StorageProvider {
       resource: {
         name: folderName,
         mimeType: 'application/vnd.google-apps.folder',
+        parents: [parentId],
       },
       fields: 'id',
     });
@@ -34,7 +58,8 @@ class GoogleDriveProvider extends StorageProvider {
   }
 
   async uploadFile(fileBuffer, folder, filename, mimeType) {
-    const folderId = await this.createFolderIfNotExists(folder);
+    const mainFolderId = await this.getOrCreateMainFolder();
+    const folderId = await this.createFolderIfNotExists(folder, mainFolderId);
     const stream = Readable.from(fileBuffer);
 
     const uploadResponse = await this.drive.files.create({
@@ -57,7 +82,12 @@ class GoogleDriveProvider extends StorageProvider {
   }
 
   async listFiles(folder) {
-    const folderId = await this.createFolderIfNotExists(folder);
+    const mainFolderId = await this.getOrCreateMainFolder();
+    const folderId =
+      folder && folder !== 'DokuHero'
+        ? await this.createFolderIfNotExists(folder, mainFolderId)
+        : mainFolderId;
+
     const listResponse = await this.drive.files.list({
       q: `'${folderId}' in parents and trashed=false`,
       fields: 'files(id, name, createdTime, size, webViewLink)',

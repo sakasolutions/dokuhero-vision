@@ -42,7 +42,7 @@ router.get('/callback', async (req, res) => {
       return res.status(500).json({ success: false, error: 'No access token returned by Google' });
     }
 
-    const redirectUrl = `http://localhost:5173/upload?access_token=${encodeURIComponent(tokens.access_token)}`;
+    const redirectUrl = `${process.env.FRONTEND_URL}/upload?access_token=${encodeURIComponent(tokens.access_token)}`;
     return res.redirect(redirectUrl);
   } catch (error) {
     return res.status(500).json({
