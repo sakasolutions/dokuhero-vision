@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const sharp = require('sharp');
 
 const requireAuth = require('../middleware/auth');
 const ocrService = require('../services/ocrService');
@@ -61,7 +62,19 @@ router.post('/upload', requireAuth, (req, res) => {
     let ocrText = '';
 
     try {
-      const ocrResult = await ocrService.extractText(req.file.buffer, req.file.mimetype);
+      const isPdf = req.file.mimetype === 'application/pdf';
+      let ocrBuffer = req.file.buffer;
+      let ocrMimeType = req.file.mimetype;
+
+      if (!isPdf) {
+        ocrBuffer = await sharp(req.file.buffer)
+          .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+        ocrMimeType = 'image/jpeg';
+      }
+
+      const ocrResult = await ocrService.extractText(ocrBuffer, ocrMimeType);
       ocrText = ocrResult?.text || '';
     } catch (_ocrError) {
       ocrText = '';
