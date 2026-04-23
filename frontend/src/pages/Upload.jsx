@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import ReactCrop, { centerCrop, convertToPixelCrop, makeAspectCrop } from 'react-image-crop';
-import 'react-image-crop/dist/ReactCrop.css';
 
 import api from '../services/api';
 
@@ -102,23 +100,28 @@ function StepIcon({ state }) {
   return <div className="step-icon step-icon-pending" />;
 }
 
+function IconPlus({ color = '#6366f1' }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function Upload() {
   const navigate = useNavigate();
   const [token, setToken] = useState('');
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState('');
+  const [pages, setPages] = useState([]);
   const [status, setStatus] = useState('idle');
   const [result, setResult] = useState(null);
   const [errorMessage, setErrorMessage] = useState('Bitte versuche es erneut.');
   const [progressStep, setProgressStep] = useState('step1_done');
 
-  const [imgSrc, setImgSrc] = useState('');
-  const [crop, setCrop] = useState();
-  const [completedCrop, setCompletedCrop] = useState();
-  const [showCropper, setShowCropper] = useState(false);
-  const imgRef = useRef(null);
   const cameraInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const addPageInputRef = useRef(null);
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
 
   const handleLogout = () => {
     localStorage.removeItem('dokuhero_token');
@@ -126,134 +129,42 @@ function Upload() {
     navigate('/');
   };
 
-  const revokePreviewIfBlob = (url) => {
-    if (url && String(url).startsWith('blob:')) {
-      URL.revokeObjectURL(url);
-    }
-  };
-
-  const onFileSelected = (selectedFile) => {
-    if (!selectedFile) {
-      return;
-    }
-
-    setResult(null);
-    setStatus('idle');
-    setErrorMessage('Bitte versuche es erneut.');
-
-    if (selectedFile.type === 'application/pdf') {
-      setShowCropper(false);
-      setImgSrc('');
-      setCrop(undefined);
-      setCompletedCrop(undefined);
-      revokePreviewIfBlob(preview);
-      setFile(selectedFile);
-      setPreview('');
-      return;
-    }
-
-    if (selectedFile.type.startsWith('image/')) {
-      setFile(null);
-      revokePreviewIfBlob(preview);
-      setPreview('');
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        setImgSrc((reader.result || ''));
-        setShowCropper(true);
-      };
-      reader.readAsDataURL(selectedFile);
-    }
-  };
-
-  const onImageLoad = (e) => {
-    const img = e.currentTarget;
-    const { width, height, naturalWidth, naturalHeight } = img;
-    if (!width || !height) {
-      return;
-    }
-    const imageAspect = naturalWidth / naturalHeight;
-    const nextCrop = centerCrop(
-      makeAspectCrop({ unit: '%', width: 90 }, imageAspect, width, height),
-      width,
-      height
-    );
-    setCrop(nextCrop);
-    setCompletedCrop(convertToPixelCrop(nextCrop, width, height));
-  };
-
-  const getCroppedBlob = async () => {
-    const image = imgRef.current;
-    if (!image || !completedCrop || completedCrop.width < 1 || completedCrop.height < 1) {
-      return null;
-    }
-
-    const scaleX = image.naturalWidth / image.width;
-    const scaleY = image.naturalHeight / image.height;
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      return null;
-    }
-
-    const sx = completedCrop.x * scaleX;
-    const sy = completedCrop.y * scaleY;
-    const sw = completedCrop.width * scaleX;
-    const sh = completedCrop.height * scaleY;
-    const pixelWidth = Math.max(1, Math.round(sw));
-    const pixelHeight = Math.max(1, Math.round(sh));
-
-    canvas.width = pixelWidth;
-    canvas.height = pixelHeight;
-
-    ctx.drawImage(image, sx, sy, sw, sh, 0, 0, pixelWidth, pixelHeight);
-
-    return new Promise((resolve, reject) => {
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error('Canvas konnte nicht exportiert werden.'));
-            return;
-          }
-          resolve(new File([blob], 'document.jpg', { type: 'image/jpeg' }));
-        },
-        'image/jpeg',
-        0.92
-      );
+  const revokeAllPagePreviews = (list) => {
+    list.forEach((p) => {
+      if (p.preview && String(p.preview).startsWith('blob:')) {
+        URL.revokeObjectURL(p.preview);
+      }
     });
   };
 
-  const onCropConfirm = async () => {
-    const cropped = await getCroppedBlob();
-    if (!cropped) {
-      return;
-    }
-    setFile(cropped);
-    revokePreviewIfBlob(preview);
-    const nextPreview = URL.createObjectURL(cropped);
-    setPreview(nextPreview);
-    setShowCropper(false);
-    setImgSrc('');
-    setCrop(undefined);
-    setCompletedCrop(undefined);
+  const addPage = (file) => {
+    const id = Date.now() + Math.random();
+    const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : '';
+    setPages((prev) => [...prev, { file, preview, id }]);
   };
 
-  const onCropCancel = () => {
-    setShowCropper(false);
-    setImgSrc('');
-    setCrop(undefined);
-    setCompletedCrop(undefined);
-    setFile(null);
-    if (cameraInputRef.current) {
-      cameraInputRef.current.value = '';
+  const removePage = (id) => {
+    setPages((prev) => {
+      const page = prev.find((p) => p.id === id);
+      if (page?.preview) {
+        URL.revokeObjectURL(page.preview);
+      }
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
+  const onPickFile = (selectedFile) => {
+    if (!selectedFile) {
+      return;
     }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    setResult(null);
+    setStatus('idle');
+    setErrorMessage('Bitte versuche es erneut.');
+    addPage(selectedFile);
   };
 
   const handleUpload = async (forceUpload = false) => {
-    if (!file || !token) {
+    if (pages.length === 0 || !token) {
       return;
     }
 
@@ -267,7 +178,14 @@ function Upload() {
 
     const uploadDocument = async (accessToken) => {
       const formData = new FormData();
-      formData.append('document', file);
+      if (pages.length === 1) {
+        formData.append('document', pages[0].file);
+      } else {
+        pages.forEach((page) => {
+          formData.append('pages', page.file);
+        });
+        formData.append('multiPage', 'true');
+      }
       if (forceUpload) {
         formData.append('forceUpload', 'true');
       }
@@ -348,24 +266,30 @@ function Upload() {
   };
 
   const resetUpload = () => {
-    setShowCropper(false);
-    setImgSrc('');
-    setCrop(undefined);
-    setCompletedCrop(undefined);
     if (cameraInputRef.current) {
       cameraInputRef.current.value = '';
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-    revokePreviewIfBlob(preview);
-    setFile(null);
-    setPreview('');
+    if (addPageInputRef.current) {
+      addPageInputRef.current.value = '';
+    }
+    setPages((prev) => {
+      revokeAllPagePreviews(prev);
+      return [];
+    });
     setResult(null);
     setStatus('idle');
     setErrorMessage('Bitte versuche es erneut.');
     setProgressStep('step1_done');
   };
+
+  useEffect(() => {
+    return () => {
+      revokeAllPagePreviews(pagesRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const currentUrl = new URL(window.location.href);
@@ -460,82 +384,7 @@ function Upload() {
                 boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
               }}
             >
-              {showCropper ? (
-                <div>
-                  <p
-                    style={{
-                      margin: '0 0 4px',
-                      fontSize: '16px',
-                      fontWeight: 600,
-                      color: '#111827',
-                    }}
-                  >
-                    Dokument zuschneiden
-                  </p>
-                  <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#9ca3af' }}>
-                    Schneide den Rand ab für bessere Erkennung
-                  </p>
-                  {imgSrc ? (
-                    <ReactCrop
-                      crop={crop}
-                      onChange={(_, percentCrop) => setCrop(percentCrop)}
-                      onComplete={(pixelCrop) => setCompletedCrop(pixelCrop)}
-                      style={{ maxHeight: '400px', width: '100%' }}
-                    >
-                      <img
-                        ref={imgRef}
-                        alt="Zum Zuschneiden"
-                        src={imgSrc}
-                        onLoad={onImageLoad}
-                        style={{ maxWidth: '100%', maxHeight: '400px' }}
-                      />
-                    </ReactCrop>
-                  ) : null}
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: '10px',
-                      marginTop: '16px',
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={onCropCancel}
-                      style={{
-                        background: '#fff',
-                        border: '1px solid #e5e7eb',
-                        color: '#374151',
-                        borderRadius: '10px',
-                        height: '48px',
-                        fontSize: '14px',
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      Neu aufnehmen
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onCropConfirm}
-                      style={{
-                        background: '#6366f1',
-                        border: 'none',
-                        color: '#fff',
-                        borderRadius: '10px',
-                        height: '48px',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      Zuschnitt bestätigen
-                    </button>
-                  </div>
-                </div>
-              ) : (
+              {pages.length === 0 ? (
                 <>
                   <div
                     style={{
@@ -565,7 +414,8 @@ function Upload() {
                         style={{ display: 'none' }}
                         onChange={(e) => {
                           if (e.target.files[0]) {
-                            onFileSelected(e.target.files[0]);
+                            onPickFile(e.target.files[0]);
+                            e.target.value = '';
                           }
                         }}
                       />
@@ -581,48 +431,162 @@ function Upload() {
                         style={{ display: 'none' }}
                         onChange={(e) => {
                           if (e.target.files[0]) {
-                            onFileSelected(e.target.files[0]);
+                            onPickFile(e.target.files[0]);
+                            e.target.value = '';
                           }
                         }}
                       />
                     </label>
                   </div>
                 </>
-              )}
-
-              {file && !showCropper && (
-                <div style={{ marginTop: '16px', marginBottom: '16px' }}>
-                  {preview ? (
-                    <img
-                      src={preview}
-                      alt="Vorschau"
-                      style={{
-                        width: '100%',
-                        maxHeight: '200px',
-                        objectFit: 'contain',
-                        borderRadius: '10px',
-                        border: '1px solid #e5e7eb',
-                        backgroundColor: '#f9fafb',
-                      }}
-                    />
-                  ) : null}
-                  <p
+              ) : (
+                <>
+                  <div
                     style={{
-                      margin: '8px 0 0',
-                      fontSize: '13px',
-                      color: '#6b7280',
-                      textAlign: 'center',
-                      maxWidth: '100%',
-                      padding: '0 20px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      boxSizing: 'border-box',
+                      display: 'flex',
+                      flexDirection: 'row',
+                      gap: '10px',
+                      overflowX: 'auto',
+                      padding: '8px 0',
+                      textAlign: 'left',
                     }}
                   >
-                    {file.name}
+                    {pages.map((page, index) => (
+                      <div
+                        key={page.id}
+                        style={{
+                          position: 'relative',
+                          width: '80px',
+                          height: '100px',
+                          flexShrink: 0,
+                          borderRadius: '8px',
+                          border: '1px solid #e5e7eb',
+                          overflow: 'visible',
+                          background: '#f9fafb',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => removePage(page.id)}
+                          style={{
+                            position: 'absolute',
+                            top: '-6px',
+                            right: '-6px',
+                            width: '16px',
+                            height: '16px',
+                            padding: 0,
+                            fontSize: '12px',
+                            lineHeight: 1,
+                            color: '#dc2626',
+                            background: '#fff',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '50%',
+                            cursor: 'pointer',
+                            display: 'grid',
+                            placeItems: 'center',
+                            zIndex: 2,
+                            fontFamily: 'inherit',
+                          }}
+                          aria-label="Seite entfernen"
+                        >
+                          ×
+                        </button>
+                        {page.preview ? (
+                          <img
+                            src={page.preview}
+                            alt=""
+                            style={{
+                              display: 'block',
+                              width: '100%',
+                              height: '70px',
+                              objectFit: 'cover',
+                              borderRadius: '6px',
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              height: '70px',
+                              display: 'grid',
+                              placeItems: 'center',
+                              color: '#9ca3af',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              borderRadius: '6px',
+                            }}
+                          >
+                            PDF
+                          </div>
+                        )}
+                        <p style={{ margin: 0, padding: '2px 0 0', fontSize: '11px', color: '#9ca3af', textAlign: 'center' }}>
+                          Seite {index + 1}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <p
+                    style={{
+                      margin: '6px 0 0',
+                      fontSize: '12px',
+                      color: '#9ca3af',
+                      textAlign: 'center',
+                    }}
+                  >
+                    Dokument wird automatisch erkannt und zugeschnitten
                   </p>
-                </div>
+                  <input
+                    ref={addPageInputRef}
+                    type="file"
+                    accept="image/*,application/pdf"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      if (e.target.files[0]) {
+                        onPickFile(e.target.files[0]);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => addPageInputRef.current?.click()}
+                    style={{
+                      marginTop: '10px',
+                      border: '1.5px dashed #d1d5db',
+                      borderRadius: '10px',
+                      height: '44px',
+                      width: '100%',
+                      background: 'transparent',
+                      color: '#6366f1',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <IconPlus />
+                    <span>Weitere Seite hinzufügen</span>
+                  </button>
+                  <div style={{ height: '1px', backgroundColor: '#e5e7eb', margin: '16px 0' }} />
+                  {status !== 'uploading' && status !== 'error' && (
+                    <button
+                      type="button"
+                      onClick={() => handleUpload(false)}
+                      className="btn-primary"
+                      style={{ width: '100%', height: '52px' }}
+                    >
+                      <span>
+                        {pages.length === 1
+                          ? 'Analysieren & ablegen'
+                          : `${pages.length} Seiten analysieren & ablegen`}
+                      </span>
+                      <IconArrowRight />
+                    </button>
+                  )}
+                </>
               )}
             </section>
 
@@ -651,17 +615,6 @@ function Upload() {
               </div>
             ) : null}
 
-            {file && status !== 'uploading' && status !== 'error' && (
-              <button
-                type="button"
-                onClick={handleUpload}
-                className="btn-primary"
-                style={{ marginTop: '16px', width: '100%', height: '52px' }}
-              >
-                <span>Analysieren & in Drive ablegen</span>
-                <IconArrowRight />
-              </button>
-            )}
           </>
         )}
 

@@ -31,7 +31,6 @@ const upload = multer({
     const extensionAllowed = ALLOWED_EXTENSIONS.has(extension);
     const mimeAllowed = ALLOWED_MIME_TYPES.has(mimeType);
 
-    // fs import wird bewusst verwendet, damit die Imports konsistent bleiben.
     if (!fs.constants || !extensionAllowed || !mimeAllowed) {
       return cb(new Error('Nur Bilder und PDFs erlaubt'));
     }
@@ -40,8 +39,117 @@ const upload = multer({
   },
 });
 
+const uploadFields = upload.fields([
+  { name: 'document', maxCount: 1 },
+  { name: 'pages', maxCount: 10 },
+]);
+
+/**
+ * Liefert reinen Fließtext fürs Modell; gleiche sharp-Vorverarbeitung wie Single-Upload.
+ * @param {import('multer').File} file
+ */
+async function ocrFileToText(file) {
+  try {
+    const isPdf = file.mimetype === 'application/pdf';
+    let ocrBuffer = file.buffer;
+    let ocrMimeType = file.mimetype;
+
+    if (!isPdf) {
+      ocrBuffer = await sharp(file.buffer)
+        .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      ocrMimeType = 'image/jpeg';
+    }
+
+    const ocrResult = await ocrService.extractText(ocrBuffer, ocrMimeType);
+    return ocrResult?.text || '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * @param {import('multer').File} file
+ */
+function buildJsonResponseFileMeta(file) {
+  return {
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size,
+  };
+}
+
+/**
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {import('multer').File} primaryFile
+ * @param {string} ocrText
+ * @param {boolean} forceUpload
+ */
+async function respondWithAnalysisAndStorage(req, res, primaryFile, ocrText, forceUpload) {
+  try {
+    const analysis = await aiService.analyzeDocument(ocrText);
+    const provider = new GoogleDriveProvider(req.accessToken);
+
+    try {
+      const storageResult = await provider.uploadFile(
+        primaryFile.buffer,
+        analysis.ordner,
+        analysis.dateiname,
+        primaryFile.mimetype,
+        forceUpload
+      );
+
+      return res.json({
+        success: true,
+        message: storageResult.duplicate ? 'Dokument bereits vorhanden' : 'Dokument erfolgreich abgelegt',
+        file: buildJsonResponseFileMeta(primaryFile),
+        analysis: {
+          ordner: analysis.ordner,
+          dateiname: analysis.dateiname,
+          typ: analysis.typ,
+        },
+        storage: {
+          fileId: storageResult.fileId,
+          fileName: storageResult.fileName,
+          webViewLink: storageResult.webViewLink,
+          duplicate: Boolean(storageResult.duplicate),
+          path: `${analysis.ordner}/${storageResult.fileName || `${analysis.dateiname}.pdf`}`,
+        },
+      });
+    } catch (uploadError) {
+      return res.json({
+        success: true,
+        message: 'Dokument erfolgreich abgelegt',
+        file: buildJsonResponseFileMeta(primaryFile),
+        analysis: {
+          ordner: analysis.ordner,
+          dateiname: analysis.dateiname,
+          typ: analysis.typ,
+        },
+        storage: {
+          error: uploadError.message || 'Upload zu Google Drive fehlgeschlagen',
+        },
+      });
+    }
+  } catch (analysisError) {
+    return res.json({
+      success: true,
+      message: 'Dokument erfolgreich abgelegt',
+      file: buildJsonResponseFileMeta(primaryFile),
+      analysis: {
+        error: analysisError.message || 'Analyse fehlgeschlagen',
+      },
+      storage: {
+        error: 'Upload nicht ausgeführt',
+      },
+    });
+  }
+}
+
 router.post('/upload', requireAuth, (req, res) => {
-  upload.single('document')(req, res, async (error) => {
+  uploadFields(req, res, async (error) => {
     if (error instanceof multer.MulterError) {
       if (error.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: 'Datei zu groß (max. 10MB)' });
@@ -54,103 +162,27 @@ router.post('/upload', requireAuth, (req, res) => {
       return res.status(400).json({ error: error.message || 'Upload fehlgeschlagen' });
     }
 
-    if (!req.file) {
-      return res.status(400).json({ error: 'Keine Datei hochgeladen' });
-    }
-
+    const filesByField = req.files || {};
+    const pageFiles = filesByField.pages;
+    const docFile = filesByField.document?.[0];
     const forceUpload = req.body?.forceUpload === true || req.body?.forceUpload === 'true';
-    let ocrText = '';
 
-    try {
-      const isPdf = req.file.mimetype === 'application/pdf';
-      let ocrBuffer = req.file.buffer;
-      let ocrMimeType = req.file.mimetype;
+    const hasPageFiles = Array.isArray(pageFiles) && pageFiles.length > 0;
 
-      if (!isPdf) {
-        ocrBuffer = await sharp(req.file.buffer)
-          .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
-          .jpeg({ quality: 85 })
-          .toBuffer();
-        ocrMimeType = 'image/jpeg';
-      }
-
-      const ocrResult = await ocrService.extractText(ocrBuffer, ocrMimeType);
-      ocrText = ocrResult?.text || '';
-    } catch (_ocrError) {
-      ocrText = '';
+    if (hasPageFiles) {
+      const files = pageFiles;
+      const texts = await Promise.all(files.map((f) => ocrFileToText(f)));
+      const combinedText = texts.map((t, i) => `--- Seite ${i + 1} ---\n${t}`).join('\n\n');
+      const primaryFile = files[0];
+      return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload);
     }
 
-    try {
-      const analysis = await aiService.analyzeDocument(ocrText);
-      const provider = new GoogleDriveProvider(req.accessToken);
-
-      try {
-        const storageResult = await provider.uploadFile(
-          req.file.buffer,
-          analysis.ordner,
-          analysis.dateiname,
-          req.file.mimetype,
-          forceUpload
-        );
-
-        return res.json({
-          success: true,
-          message: storageResult.duplicate ? 'Dokument bereits vorhanden' : 'Dokument erfolgreich abgelegt',
-          file: {
-            originalname: req.file.originalname,
-            mimetype: req.file.mimetype,
-            size: req.file.size,
-          },
-          analysis: {
-            ordner: analysis.ordner,
-            dateiname: analysis.dateiname,
-            typ: analysis.typ,
-          },
-          storage: {
-            fileId: storageResult.fileId,
-            fileName: storageResult.fileName,
-            webViewLink: storageResult.webViewLink,
-            duplicate: Boolean(storageResult.duplicate),
-            path: `${analysis.ordner}/${storageResult.fileName || `${analysis.dateiname}.pdf`}`,
-          },
-        });
-      } catch (uploadError) {
-        return res.json({
-          success: true,
-          message: 'Dokument erfolgreich abgelegt',
-          file: {
-            originalname: req.file.originalname,
-            mimetype: req.file.mimetype,
-            size: req.file.size,
-          },
-          analysis: {
-            ordner: analysis.ordner,
-            dateiname: analysis.dateiname,
-            typ: analysis.typ,
-          },
-          storage: {
-            error: uploadError.message || 'Upload zu Google Drive fehlgeschlagen',
-          },
-        });
-      }
-    } catch (analysisError) {
-      return res.json({
-        success: true,
-        message: 'Dokument erfolgreich abgelegt',
-        file: {
-          originalname: req.file.originalname,
-          mimetype: req.file.mimetype,
-          size: req.file.size,
-        },
-        analysis: {
-          error: analysisError.message || 'Analyse fehlgeschlagen',
-        },
-        storage: {
-          error: 'Upload nicht ausgeführt',
-        },
-      });
+    if (docFile) {
+      const ocrText = await ocrFileToText(docFile);
+      return respondWithAnalysisAndStorage(req, res, docFile, ocrText, forceUpload);
     }
 
+    return res.status(400).json({ error: 'Keine Datei hochgeladen' });
   });
 });
 
