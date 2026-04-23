@@ -293,8 +293,15 @@ function Upload() {
 
         {status === 'success' && result && (
           <section style={{ textAlign: 'center', backgroundColor: '#fff', borderRadius: '12px', padding: '24px 16px' }}>
-            <div style={{ fontSize: '64px', marginBottom: '8px' }}>✅</div>
-            <h2 style={{ margin: '0 0 16px', fontSize: '24px', fontWeight: 700 }}>Erfolgreich abgelegt!</h2>
+            <div style={{ fontSize: '64px', marginBottom: '8px' }}>{result.storage?.duplicate ? '⚠️' : '✅'}</div>
+            <h2 style={{ margin: '0 0 8px', fontSize: '24px', fontWeight: 700 }}>
+              {result.storage?.duplicate ? 'Bereits abgelegt!' : 'Erfolgreich abgelegt!'}
+            </h2>
+            {result.storage?.duplicate ? (
+              <p style={{ margin: '0 0 16px', color: '#b26a00' }}>Dieses Dokument wurde bereits gespeichert.</p>
+            ) : (
+              <div style={{ height: '16px' }} />
+            )}
 
             <div style={{ backgroundColor: '#f1f3f4', borderRadius: '10px', padding: '14px', textAlign: 'left' }}>
               <p style={{ margin: '0 0 8px' }}>
@@ -305,7 +312,7 @@ function Upload() {
               </p>
               {result.storage?.webViewLink ? (
                 <a href={result.storage.webViewLink} target="_blank" rel="noreferrer" style={{ color: '#4285F4', textDecoration: 'none' }}>
-                  In Google Drive öffnen →
+                  {result.storage?.duplicate ? 'Vorhandene Datei öffnen →' : 'In Google Drive öffnen →'}
                 </a>
               ) : (
                 <p style={{ margin: 0, color: '#d93025' }}>{result.storage?.error || 'Kein Drive-Link verfügbar'}</p>

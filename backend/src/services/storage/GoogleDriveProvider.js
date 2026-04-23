@@ -62,15 +62,33 @@ class GoogleDriveProvider extends StorageProvider {
     const categoryFolderId = await this.createFolderIfNotExists(folder, mainFolderId);
     const filenameParts = (filename || '').split('_').filter(Boolean);
     const anbieter = filenameParts.length >= 3 ? filenameParts[filenameParts.length - 1] : '';
-    const targetFolderId = anbieter
+    const providerFolderId = anbieter
       ? await this.createFolderIfNotExists(anbieter, categoryFolderId)
       : categoryFolderId;
+    const targetFileName = `${filename}.pdf`;
+
+    const existingFileResponse = await this.drive.files.list({
+      q: `name='${targetFileName}' and '${providerFolderId}' in parents and trashed=false`,
+      fields: 'files(id, name, webViewLink)',
+      pageSize: 1,
+    });
+
+    const existingFile = existingFileResponse.data.files?.[0];
+    if (existingFile) {
+      return {
+        fileId: existingFile.id,
+        fileName: existingFile.name,
+        webViewLink: existingFile.webViewLink,
+        duplicate: true,
+      };
+    }
+
     const stream = Readable.from(fileBuffer);
 
     const uploadResponse = await this.drive.files.create({
       resource: {
-        name: `${filename}.pdf`,
-        parents: [targetFolderId],
+        name: targetFileName,
+        parents: [providerFolderId],
       },
       media: {
         mimeType,
@@ -83,6 +101,7 @@ class GoogleDriveProvider extends StorageProvider {
       fileId: uploadResponse.data.id,
       fileName: uploadResponse.data.name,
       webViewLink: uploadResponse.data.webViewLink,
+      duplicate: false,
     };
   }
 

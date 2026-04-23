@@ -80,7 +80,7 @@ router.post('/upload', requireAuth, (req, res) => {
 
         return res.json({
           success: true,
-          message: 'Dokument erfolgreich abgelegt',
+          message: storageResult.duplicate ? 'Dokument bereits vorhanden' : 'Dokument erfolgreich abgelegt',
           file: {
             originalname: req.file.originalname,
             mimetype: req.file.mimetype,
@@ -95,6 +95,7 @@ router.post('/upload', requireAuth, (req, res) => {
             fileId: storageResult.fileId,
             fileName: storageResult.fileName,
             webViewLink: storageResult.webViewLink,
+            duplicate: Boolean(storageResult.duplicate),
             path: `${analysis.ordner}/${analysis.dateiname}.pdf`,
           },
         });
