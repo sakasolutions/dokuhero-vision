@@ -2,8 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const sharp = require('sharp');
-const PDFDocument = require('pdfkit');
+const { PDFDocument } = require('pdf-lib');
 
 const requireAuth = require('../middleware/auth');
 const ocrService = require('../services/ocrService');
@@ -45,132 +44,26 @@ const uploadFields = upload.fields([
   { name: 'pages', maxCount: 10 },
 ]);
 
-function sanitizeOcrTextForPdf(text) {
-  return String(text || '')
-    .replace(/\0/g, '')
-    .slice(0, 500000);
-}
-
 /**
- * Einseitiges PDF: Originalbild vollflächig, OCR-Text unsichtbar darüber (durchsuchbar).
- * @param {Buffer} imageBuffer
- * @param {string} mimeType
- * @param {string} ocrText
+ * @param {Buffer[]} buffers
  * @returns {Promise<Buffer>}
  */
-async function imageBufferToSearchablePdf(imageBuffer, mimeType, ocrText) {
-  const mime = (mimeType || '').toLowerCase();
-  let displayBuffer = imageBuffer;
-  if (mime === 'image/heic' || mime === 'image/heif') {
-    displayBuffer = await sharp(imageBuffer).jpeg({ quality: 95 }).toBuffer();
+async function mergePdfBuffers(buffers) {
+  const merged = await PDFDocument.create();
+  for (const buf of buffers) {
+    const src = await PDFDocument.load(buf);
+    const copied = await merged.copyPages(src, src.getPageIndices());
+    copied.forEach((page) => merged.addPage(page));
   }
-
-  const meta = await sharp(displayBuffer).metadata();
-  const w = meta.width || 612;
-  const h = meta.height || 792;
-  const sanitized = sanitizeOcrTextForPdf(ocrText);
-
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: [w, h], margin: 0 });
-    const chunks = [];
-    doc.on('data', (chunk) => chunks.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-
-    try {
-      doc.image(displayBuffer, 0, 0, { width: w, height: h });
-      doc.save();
-      doc.opacity(0);
-      doc.fillOpacity(0);
-      doc.font('Helvetica').fontSize(1);
-      doc.fillColor('#000000');
-      doc.text(sanitized, 0, 0, { width: w, height: h, lineGap: 0 });
-      doc.restore();
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
-  });
+  const bytes = await merged.save();
+  return Buffer.from(bytes);
 }
 
 /**
- * Mehrseitiges PDF aus Bildern + je Seite OCR-Text (unsichtbar, durchsuchbar).
- * @param {import('multer').File[]} files
- * @param {string[]} pageTexts
- * @returns {Promise<Buffer>}
- */
-async function imagesToSearchablePdf(files, pageTexts) {
-  const pages = [];
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const mime = (file.mimetype || '').toLowerCase();
-    let buf = file.buffer;
-    if (mime === 'image/heic' || mime === 'image/heif') {
-      buf = await sharp(file.buffer).jpeg({ quality: 95 }).toBuffer();
-    }
-    const meta = await sharp(buf).metadata();
-    pages.push({
-      buffer: buf,
-      text: sanitizeOcrTextForPdf(pageTexts[i] || ''),
-      width: meta.width || 612,
-      height: meta.height || 792,
-    });
-  }
-
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({
-      size: [pages[0].width, pages[0].height],
-      margin: 0,
-    });
-    const chunks = [];
-    doc.on('data', (chunk) => chunks.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-
-    try {
-      pages.forEach((p, index) => {
-        if (index > 0) {
-          doc.addPage({ size: [p.width, p.height] });
-        }
-        doc.image(p.buffer, 0, 0, { width: p.width, height: p.height });
-        doc.save();
-        doc.opacity(0);
-        doc.fillOpacity(0);
-        doc.font('Helvetica').fontSize(1);
-        doc.fillColor('#000000');
-        doc.text(p.text, 0, 0, { width: p.width, height: p.height, lineGap: 0 });
-        doc.restore();
-      });
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
-  });
-}
-
-/**
- * Liefert reinen Fließtext fürs Modell; gleiche sharp-Vorverarbeitung wie Single-Upload.
  * @param {import('multer').File} file
  */
-async function ocrFileToText(file) {
-  try {
-    const isPdf = file.mimetype === 'application/pdf';
-    let ocrBuffer = file.buffer;
-    let ocrMimeType = file.mimetype;
-
-    if (!isPdf) {
-      ocrBuffer = await sharp(file.buffer)
-        .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 85 })
-        .toBuffer();
-      ocrMimeType = 'image/jpeg';
-    }
-
-    const ocrResult = await ocrService.extractText(ocrBuffer, ocrMimeType);
-    return ocrResult?.text || '';
-  } catch {
-    return '';
-  }
+async function ocrFileToResult(file) {
+  return ocrService.extractText(file.buffer, file.mimetype);
 }
 
 /**
@@ -190,31 +83,22 @@ function buildJsonResponseFileMeta(file) {
  * @param {import('multer').File} primaryFile
  * @param {string} ocrText
  * @param {boolean} forceUpload
+ * @param {Buffer | null} [ocrPdfBuffer]
  */
-async function respondWithAnalysisAndStorage(req, res, primaryFile, ocrText, forceUpload) {
+async function respondWithAnalysisAndStorage(req, res, primaryFile, ocrText, forceUpload, ocrPdfBuffer = null) {
   try {
     const analysis = await aiService.analyzeDocument(ocrText);
     const provider = new GoogleDriveProvider(req.accessToken);
 
     let fileForUpload = primaryFile;
-    const uploadMime = (primaryFile.mimetype || '').toLowerCase();
-    if (uploadMime.startsWith('image/')) {
-      try {
-        const pdfBuffer = await imageBufferToSearchablePdf(
-          primaryFile.buffer,
-          primaryFile.mimetype,
-          ocrText || ''
-        );
-        const baseName = (primaryFile.originalname || 'document').replace(/\.[^.]+$/i, '') || 'document';
-        fileForUpload = {
-          buffer: pdfBuffer,
-          mimetype: 'application/pdf',
-          originalname: `${baseName}.pdf`,
-          size: pdfBuffer.length,
-        };
-      } catch (_pdfErr) {
-        fileForUpload = primaryFile;
-      }
+    if (ocrPdfBuffer && Buffer.isBuffer(ocrPdfBuffer) && ocrPdfBuffer.length > 0) {
+      const baseName = (primaryFile.originalname || 'document').replace(/\.[^.]+$/i, '') || 'document';
+      fileForUpload = {
+        buffer: ocrPdfBuffer,
+        mimetype: 'application/pdf',
+        originalname: `${baseName}.pdf`,
+        size: ocrPdfBuffer.length,
+      };
     }
 
     try {
@@ -296,34 +180,39 @@ router.post('/upload', requireAuth, (req, res) => {
 
     if (hasPageFiles) {
       const files = pageFiles;
-      const texts = await Promise.all(files.map((f) => ocrFileToText(f)));
+      const ocrResults = await Promise.all(files.map((f) => ocrFileToResult(f)));
+      const texts = ocrResults.map((r) => r.text || '');
       const combinedText = texts.map((t, i) => `--- Seite ${i + 1} ---\n${t}`).join('\n\n');
 
       const allImages = files.every((f) => (f.mimetype || '').toLowerCase().startsWith('image/'));
-      let primaryFile = files[0];
+      const pdfBuffers = ocrResults.map((r) => r.pdfBuffer).filter((b) => b && Buffer.isBuffer(b) && b.length > 0);
 
-      if (files.length > 1 && allImages) {
+      let primaryFile = files[0];
+      let ocrPdfBuffer = ocrResults[0]?.pdfBuffer || null;
+
+      if (files.length > 1 && allImages && pdfBuffers.length === files.length) {
         try {
-          const pdfBuffer = await imagesToSearchablePdf(files, texts);
+          ocrPdfBuffer = await mergePdfBuffers(pdfBuffers);
           primaryFile = {
-            buffer: pdfBuffer,
+            buffer: ocrPdfBuffer,
             mimetype: 'application/pdf',
             originalname: 'document.pdf',
-            size: pdfBuffer.length,
+            size: ocrPdfBuffer.length,
           };
-        } catch (pdfErr) {
+          return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload, null);
+        } catch (mergeErr) {
           return res.status(500).json({
-            error: pdfErr?.message || 'PDF aus Bildern konnte nicht erzeugt werden',
+            error: mergeErr?.message || 'PDF-Zusammenführung fehlgeschlagen',
           });
         }
       }
 
-      return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload);
+      return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload, ocrPdfBuffer);
     }
 
     if (docFile) {
-      const ocrText = await ocrFileToText(docFile);
-      return respondWithAnalysisAndStorage(req, res, docFile, ocrText, forceUpload);
+      const ocr = await ocrService.extractText(docFile.buffer, docFile.mimetype);
+      return respondWithAnalysisAndStorage(req, res, docFile, ocr.text || '', forceUpload, ocr.pdfBuffer);
     }
 
     return res.status(400).json({ error: 'Keine Datei hochgeladen' });
