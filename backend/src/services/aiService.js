@@ -26,29 +26,53 @@ async function analyzeDocument(ocrText) {
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      max_tokens: 200,
+      max_tokens: 300,
+      temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [
         {
           role: 'system',
-          content: `Du bist ein Dokumenten-Klassifizierungs-Assistent für deutsche Dokumente.
-Analysiere den Text und antworte NUR mit einem JSON-Objekt in diesem Format:
+          content: `Du bist ein Experte für deutsche Dokumente und Briefpost. 
+Analysiere den Text und klassifiziere das Dokument PRÄZISE.
+
+Antworte NUR mit diesem JSON:
 {
   "ordner": "Kategorie",
-  "dateiname": "YYYY-MM_Beschreibung_Absender",
-  "typ": "Dokumenttyp"
+  "dateiname": "YYYY-MM_Typ_Absender",
+  "typ": "Dokumenttyp",
+  "absender": "Firmen- oder Behördenname"
 }
 
-Mögliche Ordner: Rechnungen, Verträge, Versicherungen, Behörden, Bank, Gesundheit, Steuern, Arbeit, Sonstiges
+ORDNER - wähle den passendsten:
+- Rechnungen (Strom, Gas, Wasser, Telefon, Internet, Einkauf, Handwerk)
+- Versicherungen (KFZ, Haftpflicht, Hausrat, Kranken, Leben, Unfall)
+- Bank (Kontoauszug, Kreditkarte, Kredit, Depot, Überweisung)
+- Steuern (Steuerbescheid, Steuererklärung, Lohnsteuer, ELSTER)
+- Behörden (Amt, Gemeinde, Stadt, Landkreis, Finanzamt, Jobcenter, Ausländerbehörde)
+- Gesundheit (Arztbrief, Befund, Rezept, Krankenkasse, Krankenhaus, Apotheke)
+- Arbeit (Arbeitsvertrag, Gehaltsabrechnung, Kündigung, Zeugnis, Personalakte)
+- Verträge (Mietvertrag, Kaufvertrag, Mobilfunk, Strom, Internet, Abo)
+- Immobilien (Mietvertrag, Nebenkosten, Hausgeld, WEG, Grundsteuer)
+- Fahrzeug (KFZ-Brief, TÜV, Führerschein, Parkticket, Bußgeld)
+- Sonstiges (nur wenn wirklich keine andere Kategorie passt)
 
-Regeln für dateiname:
-- Kein .pdf am Ende
-- Keine Leerzeichen, nur Unterstriche
-- Format: YYYY-MM_Typ_Absender (z.B. 2024-03_Rechnung_Telekom)
-- Wenn Datum unbekannt: aktuelles Jahr und Monat verwenden
-- Max 50 Zeichen
+REGELN für dateiname:
+- Format: YYYY-MM_Typ_Absender
+- Datum aus Dokument extrahieren, sonst aktuelles Datum
+- Absender: kurz und eindeutig (z.B. Telekom, Finanzamt, AOK, ADAC)
+- Keine Leerzeichen, Umlaute ersetzen (ä→ae, ö→oe, ü→ue, ß→ss)
+- Max 60 Zeichen
+- Beispiele:
+  2024-03_Rechnung_Telekom
+  2024-01_Kontoauszug_Sparkasse
+  2023-12_Steuerbescheid_Finanzamt
+  2024-02_Gehaltsabrechnung_Musterfirma
+  2024-03_Arztbrief_Kardiologie-Muenchen
 
-Antworte nur mit dem JSON, keine Erklärungen.`,
+WICHTIG: 
+- Lieber eine spezifische Kategorie als Sonstiges
+- Absender immer auf Deutsch
+- Wenn Datum nicht erkennbar: aktuelles Jahr + aktueller Monat`,
         },
         {
           role: 'user',
