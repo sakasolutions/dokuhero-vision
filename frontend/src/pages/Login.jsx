@@ -1,33 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-function Logo({ small = false }) {
-  const boxSize = small ? 28 : 34;
-  const fontSize = small ? 18 : 22;
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-      <div
-        style={{
-          width: `${boxSize}px`,
-          height: `${boxSize}px`,
-          borderRadius: '8px',
-          backgroundColor: '#6366f1',
-          color: '#fff',
-          display: 'grid',
-          placeItems: 'center',
-          fontWeight: 700,
-          fontSize: `${fontSize}px`,
-          lineHeight: 1,
-        }}
-      >
-        D
-      </div>
-      <span style={{ color: '#fff', fontSize: '20px', fontWeight: 600 }}>DokuHero</span>
-    </div>
-  );
-}
-
 function GoogleIcon() {
   return (
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
@@ -48,11 +21,10 @@ function GoogleIcon() {
   );
 }
 
-function FeatureIcon() {
+function CheckIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" stroke="#6366f1" strokeWidth="2" />
-      <path d="M8 12.5 10.8 15 16 9" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" aria-hidden="true">
+      <path d="M5 12.8 9.5 17 19 7.5" stroke="#6366f1" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -72,95 +44,126 @@ function Login() {
   };
 
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        backgroundColor: '#0a0a0a',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-        position: 'relative',
-      }}
-    >
-      <div style={{ position: 'absolute', left: '20px', top: '20px' }}>
-        <Logo small />
-      </div>
+    <main style={styles.page}>
       <section
         style={{
           width: '100%',
           maxWidth: '400px',
-          backgroundColor: '#141414',
-          borderRadius: '12px',
-          border: '1px solid #262626',
-          padding: '48px 24px',
+          backgroundColor: '#ffffff',
+          borderRadius: '20px',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.1)',
+          padding: '40px',
         }}
       >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
+          <div style={styles.logoBox}>D</div>
+          <span style={styles.logoText}>DokuHero</span>
+        </div>
         <h1
           style={{
-            margin: '0 0 12px',
-            fontSize: '28px',
+            margin: '0 0 8px',
+            fontSize: '26px',
             lineHeight: 1.2,
-            fontWeight: 600,
-            color: '#fff',
+            fontWeight: 700,
+            color: '#111827',
           }}
         >
-          Dokumente automatisch organisieren.
+          Schluss mit dem Dokumentenchaos.
         </h1>
-        <p style={{ margin: '0 0 32px', color: '#888', fontSize: '15px', lineHeight: 1.5 }}>
-          Foto scannen. KI erkennt. Google Drive sortiert.
+        <p style={{ margin: '0 0 28px', color: '#6b7280', fontSize: '15px', lineHeight: 1.6 }}>
+          Foto scannen — KI erkennt Typ und Absender — automatisch in Google Drive sortiert.
         </p>
 
-        <button type="button" onClick={handleGoogleLogin} className="btn-primary">
+        <button type="button" onClick={handleGoogleLogin} className="login-google-button">
           <GoogleIcon />
           <span>Mit Google anmelden</span>
         </button>
 
-        <div style={{ height: '1px', backgroundColor: '#262626', margin: '24px 0' }} />
+        <div style={{ height: '1px', backgroundColor: '#e5e7eb', margin: '24px 0' }} />
 
         <div style={{ display: 'grid', gap: '12px' }}>
           {[
-            'Dokumente in Sekunden sortiert',
-            'Sicher in deinem Google Drive',
-            'KI erkennt Typ und Absender',
+            'In 30 Sekunden sortiert — kein manuelles Ablegen',
+            'Alles bleibt in deinem Google Drive',
+            'KI erkennt Absender, Typ und Datum automatisch',
           ].map((item) => (
             <div key={item} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <FeatureIcon />
-              <span style={{ color: '#888', fontSize: '14px' }}>{item}</span>
+              <div style={styles.featureBadge}>
+                <CheckIcon />
+              </div>
+              <span style={{ color: '#374151', fontSize: '14px', fontWeight: 500 }}>{item}</span>
             </div>
           ))}
         </div>
 
-        <p style={{ margin: '24px 0 0', fontSize: '13px', color: '#555' }}>
-          Deine Dokumente bleiben in deinem Google Drive.
+        <p style={{ margin: '24px 0 0', fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>
+          Durch Anmelden stimmst du unseren Nutzungsbedingungen zu.
         </p>
       </section>
 
       <style>{`
-        .btn-primary {
+        .login-google-button {
           width: 100%;
-          height: 48px;
+          height: 52px;
           border: none;
-          border-radius: 8px;
+          border-radius: 10px;
           background: #6366f1;
           color: #fff;
           font-size: 15px;
-          font-weight: 500;
+          font-weight: 600;
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 10px;
-          transition: background-color 0.18s ease;
+          transition: all 0.15s ease;
         }
-        .btn-primary:hover {
+        .login-google-button:hover {
           background: #4f46e5;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(99,102,241,0.4);
         }
       `}</style>
     </main>
   );
 }
+
+const styles = {
+  page: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '20px',
+    backgroundColor: '#f3f4f6',
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  },
+  logoBox: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '10px',
+    backgroundColor: '#6366f1',
+    color: '#fff',
+    display: 'grid',
+    placeItems: 'center',
+    fontSize: '20px',
+    fontWeight: 700,
+    lineHeight: 1,
+  },
+  logoText: {
+    fontSize: '20px',
+    fontWeight: 700,
+    color: '#111827',
+  },
+  featureBadge: {
+    width: '20px',
+    height: '20px',
+    borderRadius: '999px',
+    backgroundColor: '#eef2ff',
+    display: 'grid',
+    placeItems: 'center',
+    flexShrink: 0,
+  },
+};
 
 export default Login;

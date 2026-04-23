@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import api from '../services/api';
@@ -22,14 +22,14 @@ function Logo() {
       >
         D
       </div>
-      <span style={{ color: '#fff', fontSize: '20px', fontWeight: 600 }}>DokuHero</span>
+      <span style={{ color: '#111827', fontSize: '16px', fontWeight: 700 }}>DokuHero</span>
     </div>
   );
 }
 
 function IconCloudUpload() {
   return (
-    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M8 17h8a4 4 0 1 0-.64-7.95A5 5 0 0 0 6 10.5 3.5 3.5 0 0 0 8 17Z" stroke="#6366f1" strokeWidth="1.8" />
       <path d="M12 7v8m0-8-3 3m3-3 3 3" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -63,6 +63,14 @@ function IconCheck({ color = '#22c55e', size = 16 }) {
   );
 }
 
+function IconArrowRight({ color = '#fff', size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M5 12h14M13 6l6 6-6 6" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function IconLogout() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -72,8 +80,24 @@ function IconLogout() {
   );
 }
 
-function Spinner({ size = 16 }) {
-  return <span className="spinner" style={{ width: `${size}px`, height: `${size}px` }} />;
+function StepIcon({ state }) {
+  if (state === 'done') {
+    return (
+      <div className="step-icon step-icon-done">
+        <IconCheck size={14} color="#16a34a" />
+      </div>
+    );
+  }
+
+  if (state === 'active') {
+    return (
+      <div className="step-icon step-icon-active">
+        <span className="spinner" style={{ width: '16px', height: '16px' }} />
+      </div>
+    );
+  }
+
+  return <div className="step-icon step-icon-pending" />;
 }
 
 function Upload() {
@@ -84,15 +108,7 @@ function Upload() {
   const [status, setStatus] = useState('idle');
   const [result, setResult] = useState(null);
   const [errorMessage, setErrorMessage] = useState('Bitte versuche es erneut.');
-  const [activeStep, setActiveStep] = useState(1);
-  const steps = useMemo(
-    () => [
-      { title: 'Dokument empfangen', text: 'Datei wird übertragen...' },
-      { title: 'KI analysiert', text: 'Typ und Absender werden erkannt...' },
-      { title: 'Wird abgelegt', text: 'Datei landet in Google Drive...' },
-    ],
-    []
-  );
+  const [progressStep, setProgressStep] = useState('step1_done');
 
   const handleLogout = () => {
     localStorage.removeItem('dokuhero_token');
@@ -127,9 +143,10 @@ function Upload() {
     setStatus('uploading');
     setResult(null);
     setErrorMessage('Bitte versuche es erneut.');
-    setActiveStep(1);
+    setProgressStep('step1_done');
 
-    let step2Timer;
+    let step2Timer = null;
+    let step3Timer = null;
 
     const uploadDocument = async (accessToken) => {
       const formData = new FormData();
@@ -169,13 +186,16 @@ function Upload() {
     };
 
     step2Timer = window.setTimeout(() => {
-      setActiveStep(2);
-    }, 1000);
+      setProgressStep('step2_active');
+    }, 800);
 
     try {
       const response = await uploadDocument(token);
-      setActiveStep(3);
-      await new Promise((resolve) => window.setTimeout(resolve, 420));
+      setProgressStep('step2_done_step3_active');
+      step3Timer = window.setTimeout(() => {
+        setProgressStep('step3_done');
+      }, 500);
+      await new Promise((resolve) => window.setTimeout(resolve, 520));
       setResult(response.data);
       setStatus(response.data?.storage?.duplicate ? 'duplicate' : 'success');
     } catch (error) {
@@ -192,8 +212,11 @@ function Upload() {
       try {
         const refreshedToken = await refreshAccessToken();
         const retryResponse = await uploadDocument(refreshedToken);
-        setActiveStep(3);
-        await new Promise((resolve) => window.setTimeout(resolve, 420));
+        setProgressStep('step2_done_step3_active');
+        step3Timer = window.setTimeout(() => {
+          setProgressStep('step3_done');
+        }, 500);
+        await new Promise((resolve) => window.setTimeout(resolve, 520));
         setResult(retryResponse.data);
         setStatus(retryResponse.data?.storage?.duplicate ? 'duplicate' : 'success');
       } catch (refreshError) {
@@ -202,19 +225,18 @@ function Upload() {
         navigate('/');
       }
     } finally {
-      if (step2Timer) {
-        window.clearTimeout(step2Timer);
-      }
+      if (step2Timer) window.clearTimeout(step2Timer);
+      if (step3Timer) window.clearTimeout(step3Timer);
     }
   };
 
-  const resetUpload = (forceRetry = false) => {
+  const resetUpload = () => {
     setFile(null);
     setPreview('');
     setResult(null);
-    setStatus(forceRetry ? 'idle' : 'idle');
+    setStatus('idle');
     setErrorMessage('Bitte versuche es erneut.');
-    setActiveStep(1);
+    setProgressStep('step1_done');
   };
 
   useEffect(() => {
@@ -243,21 +265,33 @@ function Upload() {
     setToken(existingToken);
   }, [navigate]);
 
-  useEffect(() => {
-    if (status !== 'uploading') {
-      setActiveStep(1);
+  const getStepState = (step) => {
+    if (progressStep === 'step1_done') {
+      if (step === 1) return 'done';
+      return 'pending';
     }
-  }, [status]);
+    if (progressStep === 'step2_active') {
+      if (step === 1) return 'done';
+      if (step === 2) return 'active';
+      return 'pending';
+    }
+    if (progressStep === 'step2_done_step3_active') {
+      if (step === 1 || step === 2) return 'done';
+      if (step === 3) return 'active';
+    }
+    if (progressStep === 'step3_done') return 'done';
+    return 'pending';
+  };
 
   return (
-    <main style={{ minHeight: '100vh', backgroundColor: '#0a0a0a', color: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <main style={styles.page}>
       <header
         style={{
           position: 'sticky',
           top: 0,
           zIndex: 10,
-          backgroundColor: '#0a0a0a',
-          borderBottom: '1px solid #262626',
+          backgroundColor: '#ffffff',
+          borderBottom: '1px solid #e5e7eb',
         }}
       >
         <div style={{ maxWidth: '480px', margin: '0 auto', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -269,14 +303,14 @@ function Upload() {
             style={{
               width: '36px',
               height: '36px',
-              border: '1px solid #262626',
+              border: '1px solid #e5e7eb',
               borderRadius: '8px',
-              backgroundColor: '#141414',
-              color: '#888',
+              backgroundColor: 'transparent',
+              color: '#6b7280',
               cursor: 'pointer',
               display: 'grid',
               placeItems: 'center',
-              transition: 'color 0.18s ease',
+              transition: 'all 0.15s ease',
             }}
             className="logout-button"
           >
@@ -285,97 +319,101 @@ function Upload() {
         </div>
       </header>
 
-      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '24px 16px' }}>
+      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '20px' }}>
         {(status === 'idle' || (status === 'error' && !result)) && (
           <>
             <section
               style={{
-                border: '1px solid #262626',
+                border: '1px solid #e5e7eb',
                 borderRadius: '12px',
-                padding: '16px',
-                backgroundColor: '#141414',
+                padding: '24px',
+                backgroundColor: '#ffffff',
                 textAlign: 'center',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
               }}
             >
               <div
                 style={{
-                  border: '1.5px dashed #333',
-                  borderRadius: '8px',
-                  padding: '40px 16px',
+                  border: '2px dashed #d1d5db',
+                  borderRadius: '12px',
+                  padding: '36px 20px',
+                  backgroundColor: '#fafafa',
+                  marginBottom: '20px',
                 }}
               >
                 <div style={{ marginBottom: '12px', display: 'grid', placeItems: 'center' }}>
                   <IconCloudUpload />
                 </div>
-                <p style={{ margin: '0 0 6px', fontSize: '17px', color: '#fff', fontWeight: 500 }}>Dokument hochladen</p>
-                <p style={{ margin: '0 0 20px', fontSize: '14px', color: '#888' }}>JPG, PNG oder PDF</p>
+                <p style={{ margin: '12px 0 0', fontSize: '17px', color: '#111827', fontWeight: 600 }}>Dokument hochladen</p>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#9ca3af' }}>JPG, PNG oder PDF — bis 10 MB</p>
+              </div>
 
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                  <label className="btn-secondary" style={{ flex: 1 }}>
-                    <IconCamera />
-                    <span>Kamera</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      style={{ display: 'none' }}
-                      onChange={(event) => handleFileSelect(event.target.files?.[0])}
-                    />
-                  </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <label className="btn-secondary" style={{ flex: 1 }}>
+                  <IconCamera color="#6366f1" />
+                  <span>Kamera</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    style={{ display: 'none' }}
+                    onChange={(event) => handleFileSelect(event.target.files?.[0])}
+                  />
+                </label>
 
-                  <label className="btn-secondary" style={{ flex: 1 }}>
-                    <IconFile />
-                    <span>Datei</span>
-                    <input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      style={{ display: 'none' }}
-                      onChange={(event) => handleFileSelect(event.target.files?.[0])}
-                    />
-                  </label>
-                </div>
+                <label className="btn-secondary" style={{ flex: 1 }}>
+                  <IconFile color="#6366f1" />
+                  <span>Datei</span>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    style={{ display: 'none' }}
+                    onChange={(event) => handleFileSelect(event.target.files?.[0])}
+                  />
+                </label>
               </div>
 
               {file && (
-                <div style={{ marginTop: '16px' }}>
+                <div style={{ marginTop: '16px', marginBottom: '16px' }}>
                   {preview ? (
                     <img
                       src={preview}
                       alt="Vorschau"
                       style={{
                         width: '100%',
-                        maxHeight: '180px',
+                        maxHeight: '200px',
                         objectFit: 'contain',
-                        borderRadius: '8px',
-                        border: '1px solid #262626',
+                        borderRadius: '10px',
+                        border: '1px solid #e5e7eb',
+                        backgroundColor: '#f9fafb',
                       }}
                     />
                   ) : null}
-                  <p style={{ margin: '10px 0 0', fontSize: '13px', color: '#888' }}>{file.name}</p>
+                  <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#6b7280', textAlign: 'center' }}>{file.name}</p>
                 </div>
               )}
             </section>
 
             {status === 'error' ? (
-              <div style={{ marginTop: '16px', backgroundColor: '#141414', border: '1px solid #262626', borderRadius: '12px', padding: '20px', textAlign: 'center' }}>
+              <div style={styles.errorCard}>
                 <div
                   style={{
-                    width: '48px',
-                    height: '48px',
+                    width: '64px',
+                    height: '64px',
                     margin: '0 auto 12px',
                     borderRadius: '999px',
-                    border: '1px solid #ef4444',
+                    border: '3px solid #dc2626',
                     display: 'grid',
                     placeItems: 'center',
                   }}
                 >
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M7 7l10 10M17 7 7 17" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" />
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M7 7l10 10M17 7 7 17" stroke="#dc2626" strokeWidth="2.2" strokeLinecap="round" />
                   </svg>
                 </div>
-                <h2 style={{ margin: '0 0 8px', fontSize: '20px', fontWeight: 600 }}>Upload fehlgeschlagen</h2>
-                <p style={{ margin: '0 0 14px', color: '#888', fontSize: '14px' }}>{errorMessage}</p>
-                <button type="button" className="btn-primary" onClick={() => resetUpload(true)}>
+                <h2 style={styles.stateTitle}>Upload fehlgeschlagen</h2>
+                <p style={styles.stateText}>{errorMessage}</p>
+                <button type="button" className="btn-primary" onClick={() => resetUpload()}>
                   Erneut versuchen
                 </button>
               </div>
@@ -388,36 +426,40 @@ function Upload() {
                 className="btn-primary"
                 style={{ marginTop: '16px', width: '100%', height: '52px' }}
               >
-                Analysieren & ablegen
+                <span>Analysieren & in Drive ablegen</span>
+                <IconArrowRight />
               </button>
             )}
           </>
         )}
 
         {status === 'uploading' && (
-          <section style={{ border: '1px solid #262626', borderRadius: '12px', backgroundColor: '#141414', padding: '16px' }}>
-            {steps.map((step, index) => {
+          <section style={styles.uploadingCard}>
+            <h2 style={{ margin: '0 0 24px', fontSize: '17px', fontWeight: 600, color: '#111827' }}>Wird verarbeitet...</h2>
+            {[
+              { title: 'Dokument empfangen', text: 'Datei erfolgreich übertragen' },
+              { title: 'KI analysiert', text: 'Typ, Absender und Datum werden erkannt' },
+              { title: 'Google Drive', text: 'Datei wird im richtigen Ordner abgelegt' },
+            ].map((step, index, all) => {
               const stepNumber = index + 1;
-              const isDone = activeStep > stepNumber;
-              const isActive = activeStep === stepNumber;
-              const textColor = isActive ? '#fff' : isDone ? '#888' : '#555';
+              const state = getStepState(stepNumber);
+              const textColor = state === 'done' ? '#16a34a' : state === 'active' ? '#111827' : '#9ca3af';
 
               return (
-                <div key={step.title} style={{ display: 'flex', gap: '12px', padding: '10px 0' }}>
-                  <div style={{ marginTop: '2px' }}>
-                    {isDone ? (
-                      <div style={{ width: '16px', height: '16px', borderRadius: '999px', border: '1px solid #22c55e', display: 'grid', placeItems: 'center' }}>
-                        <IconCheck size={11} />
-                      </div>
-                    ) : isActive ? (
-                      <Spinner size={16} />
-                    ) : (
-                      <div style={{ width: '16px', height: '16px', borderRadius: '999px', border: '1px solid #333' }} />
-                    )}
-                  </div>
+                <div
+                  key={step.title}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '14px',
+                    padding: '14px 0',
+                    borderBottom: index < all.length - 1 ? '1px solid #f3f4f6' : 'none',
+                  }}
+                >
+                  <StepIcon state={state} />
                   <div>
-                    <p style={{ margin: 0, color: textColor, fontSize: '15px', fontWeight: 500 }}>{step.title}</p>
-                    <p style={{ margin: '2px 0 0', color: '#555', fontSize: '14px' }}>{step.text}</p>
+                    <p style={{ margin: 0, color: textColor, fontSize: '14px', fontWeight: 600 }}>{step.title}</p>
+                    <p style={{ margin: '2px 0 0', color: '#9ca3af', fontSize: '13px' }}>{step.text}</p>
                   </div>
                 </div>
               );
@@ -429,84 +471,91 @@ function Upload() {
           <section style={{ textAlign: 'center' }}>
             <div
               style={{
-                width: '48px',
-                height: '48px',
+                width: '64px',
+                height: '64px',
                 borderRadius: '999px',
-                border: `1px solid ${status === 'success' ? '#22c55e' : '#f59e0b'}`,
+                border: `3px solid ${status === 'success' ? '#16a34a' : '#d97706'}`,
                 display: 'grid',
                 placeItems: 'center',
-                margin: '0 auto 12px',
+                margin: '0 auto 20px',
+                animation: status === 'success' ? 'scaleIn .3s ease' : 'none',
               }}
             >
               {status === 'success' ? (
-                <IconCheck />
+                <IconCheck size={28} color="#16a34a" />
               ) : (
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M12 7v6m0 4h.01" stroke="#f59e0b" strokeWidth="2.2" strokeLinecap="round" />
-                  <path d="M12 3 2.6 20h18.8L12 3Z" stroke="#f59e0b" strokeWidth="1.6" />
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 7v6m0 4h.01" stroke="#d97706" strokeWidth="2.2" strokeLinecap="round" />
+                  <path d="M12 3 2.6 20h18.8L12 3Z" stroke="#d97706" strokeWidth="1.8" />
                 </svg>
               )}
             </div>
 
-            <h2 style={{ margin: '0 0 8px', fontSize: '20px', fontWeight: 600, color: '#fff' }}>
-              {status === 'success' ? 'Erfolgreich abgelegt' : 'Bereits gespeichert'}
+            <h2 style={{ margin: '0 0 4px', fontSize: '22px', fontWeight: 700, color: '#111827' }}>
+              {status === 'success' ? 'Erfolgreich abgelegt!' : 'Bereits gespeichert'}
             </h2>
-            {status === 'duplicate' ? (
-              <p style={{ margin: '0 0 14px', color: '#888', fontSize: '14px' }}>
+            <p style={{ margin: '0 0 12px', color: '#6b7280', fontSize: '14px', fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+              {result.storage?.fileName || result.storage?.path || '-'}
+            </p>
+            {status === 'duplicate' && (
+              <p style={{ margin: '0 0 14px', color: '#6b7280', fontSize: '14px' }}>
                 Dieses Dokument ist bereits in deinem Drive vorhanden.
               </p>
-            ) : null}
+            )}
 
-            <div style={{ backgroundColor: '#141414', border: '1px solid #262626', borderRadius: '8px', padding: '16px', textAlign: 'left' }}>
+            <div style={styles.infoCard}>
               <p style={{ margin: '0 0 8px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
-                <span style={{ color: '#555' }}>Kategorie</span>
-                <span style={{ color: '#fff' }}>{result.analysis?.ordner || '-'}</span>
+                <span style={styles.infoLabel}>Kategorie</span>
+                <span style={styles.infoValue}>{result.analysis?.ordner || '-'}</span>
               </p>
               <p style={{ margin: '0 0 8px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
-                <span style={{ color: '#555' }}>Datei</span>
-                <span style={{ color: '#fff', fontSize: '13px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                <span style={styles.infoLabel}>Datei</span>
+                <span style={{ ...styles.infoValue, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
                   {result.storage?.path || '-'}
                 </span>
               </p>
               <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
-                <span style={{ color: '#555' }}>Google Drive</span>
+                <span style={styles.infoLabel}>Google Drive</span>
                 {result.storage?.webViewLink ? (
-                  <a href={result.storage.webViewLink} target="_blank" rel="noreferrer" style={{ color: '#6366f1', textDecoration: 'none' }}>
-                    {status === 'duplicate' ? 'Vorhandene Datei öffnen →' : 'Öffnen →'}
+                  <a href={result.storage.webViewLink} target="_blank" rel="noreferrer" style={{ color: '#6366f1', textDecoration: 'none', fontSize: '13px', fontWeight: 600 }}>
+                    Öffnen →
                   </a>
                 ) : (
-                  <span style={{ color: '#ef4444', fontSize: '13px' }}>{result.storage?.error || 'Nicht verfügbar'}</span>
+                  <span style={{ color: '#dc2626', fontSize: '13px' }}>{result.storage?.error || 'Nicht verfügbar'}</span>
                 )}
               </p>
             </div>
 
             {status === 'duplicate' ? (
-              <div style={{ marginTop: '16px', display: 'grid', gap: '10px' }}>
+              <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 {result.storage?.webViewLink ? (
                   <a
                     href={result.storage.webViewLink}
                     target="_blank"
                     rel="noreferrer"
                     style={{
-                      color: '#6366f1',
+                      color: '#374151',
                       textDecoration: 'none',
-                      height: '44px',
+                      height: '48px',
                       display: 'grid',
                       placeItems: 'center',
-                      border: '1px solid #262626',
-                      borderRadius: '8px',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '10px',
+                      backgroundColor: '#fff',
+                      fontWeight: 500,
+                      fontSize: '14px',
                     }}
                   >
-                    Vorhandene Datei öffnen →
+                    Datei öffnen
                   </a>
                 ) : null}
                 <button
                   type="button"
                   onClick={() => handleUpload(true)}
-                  className="btn-outline"
+                  className="btn-primary"
                   style={{ width: '100%', height: '48px' }}
                 >
-                  Trotzdem neu ablegen
+                  Neu ablegen
                 </button>
               </div>
             ) : (
@@ -516,7 +565,7 @@ function Upload() {
                 className="btn-outline"
                 style={{ marginTop: '16px', width: '100%', height: '48px' }}
               >
-                Weiteres Dokument
+                Weiteres Dokument scannen
               </button>
             )}
           </section>
@@ -527,54 +576,157 @@ function Upload() {
         .btn-primary {
           background: #6366f1;
           border: none;
-          border-radius: 8px;
+          border-radius: 10px;
           color: #fff;
-          font-weight: 500;
+          font-weight: 600;
           font-size: 15px;
           cursor: pointer;
-          transition: background-color .18s ease;
+          transition: all .15s ease;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
         }
-        .btn-primary:hover { background: #4f46e5; }
+        .btn-primary:hover {
+          background: #4f46e5;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(99,102,241,0.4);
+        }
 
         .btn-secondary {
-          height: 44px;
-          border-radius: 8px;
-          border: 1px solid #262626;
-          background: #1a1a1a;
-          color: #fff;
+          height: 48px;
+          border-radius: 10px;
+          border: 1px solid #e5e7eb;
+          background: #fff;
+          color: #374151;
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 8px;
           font-size: 14px;
+          font-weight: 500;
           cursor: pointer;
+          transition: all .15s ease;
+        }
+        .btn-secondary:hover {
+          border-color: #6366f1;
+          background: #eef2ff;
         }
 
         .btn-outline {
-          border: 1px solid #262626;
-          background: transparent;
-          border-radius: 8px;
-          color: #fff;
+          border: 1px solid #e5e7eb;
+          background: #fff;
+          border-radius: 10px;
+          color: #374151;
           font-size: 15px;
+          font-weight: 500;
           cursor: pointer;
+          transition: all .15s ease;
+        }
+        .btn-outline:hover {
+          border-color: #6366f1;
+          color: #6366f1;
         }
 
-        .logout-button:hover { color: #fff; }
+        .logout-button:hover {
+          color: #111827;
+          background: #f3f4f6;
+        }
 
         .spinner {
           display: inline-block;
           border-radius: 999px;
-          border: 2px solid #2f2f2f;
+          border: 2px solid #e5e7eb;
           border-top-color: #6366f1;
           animation: spin .8s linear infinite;
+        }
+
+        .step-icon {
+          width: 24px;
+          height: 24px;
+          border-radius: 999px;
+          flex-shrink: 0;
+          margin-top: 2px;
+          display: grid;
+          place-items: center;
+        }
+        .step-icon-pending {
+          border: 2px solid #e5e7eb;
+          background: #fff;
+        }
+        .step-icon-active {
+          border: 2px solid #e5e7eb;
+          background: #fff;
+        }
+        .step-icon-done {
+          border: 1px solid #bbf7d0;
+          background: #f0fdf4;
         }
 
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
+        @keyframes scaleIn {
+          from { transform: scale(0.8); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
       `}</style>
     </main>
   );
 }
+
+const styles = {
+  page: {
+    minHeight: '100vh',
+    backgroundColor: '#f3f4f6',
+    color: '#111827',
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  },
+  uploadingCard: {
+    backgroundColor: '#fff',
+    borderRadius: '16px',
+    border: '1px solid #e5e7eb',
+    padding: '24px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+  },
+  errorCard: {
+    marginTop: '16px',
+    backgroundColor: '#fff',
+    border: '1px solid #e5e7eb',
+    borderRadius: '16px',
+    padding: '20px',
+    textAlign: 'center',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+  },
+  stateTitle: {
+    margin: '0 0 8px',
+    fontSize: '22px',
+    fontWeight: 700,
+    color: '#111827',
+  },
+  stateText: {
+    margin: '0 0 14px',
+    color: '#6b7280',
+    fontSize: '14px',
+  },
+  infoCard: {
+    backgroundColor: '#f9fafb',
+    border: '1px solid #e5e7eb',
+    borderRadius: '12px',
+    padding: '16px',
+    marginTop: '20px',
+    textAlign: 'left',
+  },
+  infoLabel: {
+    color: '#9ca3af',
+    fontSize: '13px',
+    fontWeight: 500,
+  },
+  infoValue: {
+    color: '#111827',
+    fontSize: '13px',
+    fontWeight: 600,
+  },
+};
 
 export default Upload;
