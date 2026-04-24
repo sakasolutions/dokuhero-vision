@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import api from '../services/api';
 
+const LS_GMAIL = 'gmail_token';
+
 function IconMailHeader({ size = 24, color = '#6366f1' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -47,6 +49,7 @@ export default function Inbox() {
   const [emails, setEmails] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [hasGmail, setHasGmail] = useState(false);
   /** @type {Record<string, { status: 'loading' | 'success' | 'error'; ordner?: string; message?: string }>} */
   const [processing, setProcessing] = useState({});
 
@@ -57,11 +60,21 @@ export default function Inbox() {
       return;
     }
 
+    const gmailToken = localStorage.getItem(LS_GMAIL);
+    if (!gmailToken) {
+      setHasGmail(false);
+      setLoading(false);
+      return;
+    }
+
+    setHasGmail(true);
     let cancelled = false;
 
     (async () => {
       try {
-        const response = await api.get('/api/gmail/inbox');
+        const response = await api.get('/api/gmail/inbox', {
+          headers: { Authorization: `Bearer ${gmailToken}` },
+        });
         if (!cancelled) {
           setEmails(response.data?.emails || []);
         }
@@ -82,14 +95,27 @@ export default function Inbox() {
   }, [navigate]);
 
   const handleProcess = useCallback(async (messageId, attachmentId, filename) => {
+    const gmailToken = localStorage.getItem(LS_GMAIL);
+    if (!gmailToken) {
+      return;
+    }
+
     const key = attachKey(messageId, attachmentId);
     setProcessing((prev) => ({ ...prev, [key]: { status: 'loading' } }));
     try {
-      const response = await api.post('/api/gmail/process', {
-        messageId,
-        attachmentId,
-        filename,
-      });
+      const response = await api.post(
+        '/api/gmail/process',
+        {
+          messageId,
+          attachmentId,
+          filename,
+        },
+        {
+          headers: {
+            'X-Gmail-Access-Token': gmailToken,
+          },
+        }
+      );
       const ordner = response.data?.analysis?.ordner || 'Drive';
       setProcessing((prev) => ({ ...prev, [key]: { status: 'success', ordner } }));
     } catch (e) {
@@ -148,6 +174,8 @@ export default function Inbox() {
             onClick={() => {
               localStorage.removeItem('dokuhero_token');
               localStorage.removeItem('dokuhero_refresh_token');
+              localStorage.removeItem(LS_GMAIL);
+              localStorage.removeItem('gmail_refresh_token');
               window.location.href = '/';
             }}
             aria-label="Abmelden"
@@ -196,11 +224,45 @@ export default function Inbox() {
           </div>
         ) : null}
 
-        {!loading && error ? (
+        {!loading && !hasGmail ? (
+          <div
+            style={{
+              background: '#fff',
+              border: '1px solid #e5e7eb',
+              borderRadius: '12px',
+              padding: '20px 16px',
+              textAlign: 'center',
+            }}
+          >
+            <p style={{ margin: 0, fontSize: '15px', color: '#374151', lineHeight: 1.5 }}>
+              Verbinde Gmail, um deine E-Mails zu sehen.
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/settings')}
+              style={{
+                marginTop: '16px',
+                fontFamily: 'inherit',
+                fontSize: '14px',
+                fontWeight: 600,
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '10px 18px',
+                background: '#6366f1',
+                cursor: 'pointer',
+              }}
+            >
+              Zu Einstellungen
+            </button>
+          </div>
+        ) : null}
+
+        {!loading && hasGmail && error ? (
           <p style={{ margin: 0, textAlign: 'center', color: '#dc2626', fontSize: '14px' }}>{error}</p>
         ) : null}
 
-        {!loading && !error ? (
+        {!loading && hasGmail && !error ? (
           <>
             <div
               style={{

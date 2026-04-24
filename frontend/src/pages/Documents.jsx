@@ -309,6 +309,8 @@ function Documents() {
             onClick={() => {
               localStorage.removeItem('dokuhero_token');
               localStorage.removeItem('dokuhero_refresh_token');
+              localStorage.removeItem('gmail_token');
+              localStorage.removeItem('gmail_refresh_token');
               window.location.href = '/';
             }}
             aria-label="Abmelden"

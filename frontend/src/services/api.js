@@ -33,6 +33,10 @@ async function performTokenRefresh() {
 }
 
 api.interceptors.request.use((config) => {
+  const existing = config.headers?.Authorization;
+  if (existing != null && String(existing).trim() !== '') {
+    return config;
+  }
   const token = localStorage.getItem('dokuhero_token');
   if (token) {
     config.headers = config.headers || {};
@@ -48,6 +52,11 @@ api.interceptors.response.use(
     const status = error?.response?.status;
 
     if (status !== 401 || !originalRequest || originalRequest._retry || isAuthRefreshRequest(originalRequest)) {
+      return Promise.reject(error);
+    }
+
+    const reqUrl = String(originalRequest.url || '');
+    if (reqUrl.includes('/api/gmail/inbox')) {
       return Promise.reject(error);
     }
 

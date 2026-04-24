@@ -5,6 +5,7 @@ import Documents from './pages/Documents';
 import Impressum from './pages/Impressum';
 import Inbox from './pages/Inbox';
 import Login from './pages/Login';
+import Settings from './pages/Settings';
 import Upload from './pages/Upload';
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
       <Route path="/upload" element={<Upload />} />
       <Route path="/documents" element={<Documents />} />
       <Route path="/inbox" element={<Inbox />} />
+      <Route path="/settings" element={<Settings />} />
       <Route path="/impressum" element={<Impressum />} />
       <Route path="/datenschutz" element={<Datenschutz />} />
     </Routes>

@@ -15,8 +15,30 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
-  'https://www.googleapis.com/auth/gmail.readonly',
 ];
+
+const GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
+
+function resolveGmailRedirectUri() {
+  if (process.env.GOOGLE_GMAIL_REDIRECT_URI) {
+    return process.env.GOOGLE_GMAIL_REDIRECT_URI;
+  }
+  const base = process.env.GOOGLE_REDIRECT_URI;
+  if (base && typeof base === 'string') {
+    return base.replace(/\/callback\/?$/i, '/gmail/callback');
+  }
+  return null;
+}
+
+const gmailRedirectUri = resolveGmailRedirectUri();
+
+const oauth2GmailClient = gmailRedirectUri
+  ? new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      gmailRedirectUri
+    )
+  : null;
 
 router.get('/google', (_req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
@@ -26,6 +48,60 @@ router.get('/google', (_req, res) => {
   });
 
   res.redirect(authUrl);
+});
+
+/** Separater OAuth-Flow nur für Gmail (gmail.readonly). Callback legt Tokens in der Settings-URL ab. */
+router.get('/gmail', (_req, res) => {
+  if (!oauth2GmailClient || !gmailRedirectUri) {
+    return res.status(500).json({
+      success: false,
+      error:
+        'Gmail-OAuth nicht konfiguriert: GOOGLE_GMAIL_REDIRECT_URI setzen oder GOOGLE_REDIRECT_URI auf …/api/auth/callback anpassen (…/gmail/callback wird abgeleitet).',
+    });
+  }
+
+  const authUrl = oauth2GmailClient.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: GMAIL_SCOPES,
+    include_granted_scopes: true,
+  });
+
+  res.redirect(authUrl);
+});
+
+router.get('/gmail/callback', async (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+  if (!oauth2GmailClient) {
+    return res.redirect(`${frontendUrl}/settings?gmail=error`);
+  }
+
+  try {
+    const { code } = req.query;
+
+    if (!code) {
+      return res.redirect(`${frontendUrl}/settings?gmail=error`);
+    }
+
+    const { tokens } = await oauth2GmailClient.getToken(code);
+    oauth2GmailClient.setCredentials(tokens);
+
+    if (!tokens.access_token) {
+      return res.redirect(`${frontendUrl}/settings?gmail=error`);
+    }
+
+    const target = new URL(`${frontendUrl.replace(/\/$/, '')}/settings`);
+    target.searchParams.set('gmail', 'connected');
+    target.searchParams.set('gmail_token', tokens.access_token);
+    if (tokens.refresh_token) {
+      target.searchParams.set('gmail_refresh', tokens.refresh_token);
+    }
+
+    return res.redirect(target.toString());
+  } catch {
+    return res.redirect(`${frontendUrl}/settings?gmail=error`);
+  }
 });
 
 router.get('/callback', async (req, res) => {

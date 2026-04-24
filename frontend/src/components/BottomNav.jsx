@@ -33,6 +33,24 @@ function IconMailNav({ size = 22, color = 'currentColor' }) {
   );
 }
 
+function IconSettingsNav({ size = 22, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+        stroke={color}
+        strokeWidth="1.7"
+      />
+      <path
+        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
+        stroke={color}
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function IconDocumentList({ size = 22, color = 'currentColor' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -61,6 +79,7 @@ function BottomNav() {
   const isUpload = location.pathname === '/upload';
   const isDocuments = location.pathname === '/documents';
   const isInbox = location.pathname === '/inbox';
+  const isSettings = location.pathname === '/settings';
 
   const tab = (path, label, active, icon) => (
     <button
@@ -83,7 +102,7 @@ function BottomNav() {
       }}
     >
       {icon}
-      <span style={{ fontSize: '11px', fontWeight: 500 }}>{label}</span>
+      <span style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1.15, textAlign: 'center' }}>{label}</span>
     </button>
   );
 
@@ -118,6 +137,12 @@ function BottomNav() {
         'Posteingang',
         isInbox,
         <IconMailNav color={isInbox ? '#6366f1' : '#9ca3af'} />
+      )}
+      {tab(
+        '/settings',
+        'Einstellungen',
+        isSettings,
+        <IconSettingsNav color={isSettings ? '#6366f1' : '#9ca3af'} />
       )}
     </nav>
   );
