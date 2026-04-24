@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ReactCrop, { convertToPixelCrop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
 
 import api from '../services/api';
 
@@ -117,6 +119,12 @@ function Upload() {
   const [errorMessage, setErrorMessage] = useState('Bitte versuche es erneut.');
   const [progressStep, setProgressStep] = useState('step1_done');
 
+  const [imgSrc, setImgSrc] = useState(null);
+  const [crop, setCrop] = useState({ unit: '%', x: 10, y: 10, width: 80, height: 80 });
+  const [completedCrop, setCompletedCrop] = useState(null);
+  const [showCropper, setShowCropper] = useState(false);
+  const imgRef = useRef(null);
+
   const cameraInputRef = useRef(null);
   const fileInputRef = useRef(null);
   const addPageInputRef = useRef(null);
@@ -147,6 +155,92 @@ function Upload() {
     const id = Date.now() + Math.random();
     const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : '';
     setPages((prev) => [...prev, { file, preview, id }]);
+  };
+
+  const onFileSelected = (file) => {
+    if (!file) {
+      return;
+    }
+    const isPdf = file.type === 'application/pdf' || String(file.name || '').toLowerCase().endsWith('.pdf');
+    if (isPdf) {
+      addPage(file);
+      return;
+    }
+    if (String(file.type || '').toLowerCase().startsWith('image/')) {
+      setCrop({ unit: '%', x: 10, y: 10, width: 80, height: 80 });
+      setCompletedCrop(null);
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImgSrc(reader.result);
+        setShowCropper(true);
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+    addPage(file);
+  };
+
+  const getCroppedBlob = () =>
+    new Promise((resolve) => {
+      if (!imgRef.current) {
+        resolve(null);
+        return;
+      }
+      const c =
+        completedCrop && completedCrop.width > 0 && completedCrop.height > 0
+          ? completedCrop
+          : convertToPixelCrop(crop, imgRef.current.width, imgRef.current.height);
+      const scaleX = imgRef.current.naturalWidth / imgRef.current.width;
+      const scaleY = imgRef.current.naturalHeight / imgRef.current.height;
+      const canvas = document.createElement('canvas');
+      canvas.width = c.width * scaleX;
+      canvas.height = c.height * scaleY;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(
+        imgRef.current,
+        c.x * scaleX,
+        c.y * scaleY,
+        c.width * scaleX,
+        c.height * scaleY,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+      canvas.toBlob(
+        (blob) => {
+          resolve(blob);
+        },
+        'image/jpeg',
+        0.95
+      );
+    });
+
+  const onCropConfirm = async () => {
+    const blob = await getCroppedBlob();
+    if (!blob) {
+      return;
+    }
+    const croppedFile = new File([blob], 'document.jpg', { type: 'image/jpeg' });
+    addPage(croppedFile);
+    setShowCropper(false);
+    setImgSrc(null);
+    setCompletedCrop(null);
+  };
+
+  const handleCropperDismiss = () => {
+    setShowCropper(false);
+    setImgSrc(null);
+    setCompletedCrop(null);
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = '';
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    if (addPageInputRef.current) {
+      addPageInputRef.current.value = '';
+    }
   };
 
   const removePage = (id) => {
@@ -271,6 +365,10 @@ function Upload() {
     if (addPageInputRef.current) {
       addPageInputRef.current.value = '';
     }
+    setShowCropper(false);
+    setImgSrc(null);
+    setCrop({ unit: '%', x: 10, y: 10, width: 80, height: 80 });
+    setCompletedCrop(null);
     setPages((prev) => {
       revokeAllPagePreviews(prev);
       return [];
@@ -380,7 +478,54 @@ function Upload() {
                 boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
               }}
             >
-              {pages.length === 0 ? (
+              {showCropper && imgSrc ? (
+                <>
+                  <p style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#111827' }}>Dokument zuschneiden</p>
+                  <p style={{ margin: '8px 0 16px', fontSize: '13px', color: '#9ca3af' }}>Ziehe den Rahmen um das Dokument</p>
+                  <div style={{ textAlign: 'center' }}>
+                    <ReactCrop
+                      crop={crop}
+                      onChange={(_, percentCrop) => setCrop(percentCrop)}
+                      onComplete={(pixelCrop) => setCompletedCrop(pixelCrop)}
+                    >
+                      <img
+                        ref={imgRef}
+                        src={imgSrc}
+                        alt="Zuschnitt"
+                        onLoad={(e) => {
+                          const { width, height } = e.currentTarget;
+                          setCompletedCrop(
+                            convertToPixelCrop({ unit: '%', x: 10, y: 10, width: 80, height: 80 }, width, height)
+                          );
+                        }}
+                        style={{ maxWidth: '100%', maxHeight: '60vh', display: 'block' }}
+                      />
+                    </ReactCrop>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '16px' }}>
+                    <button type="button" className="btn-secondary" style={{ height: '48px' }} onClick={handleCropperDismiss}>
+                      Neu aufnehmen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onCropConfirm()}
+                      style={{
+                        height: '48px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background: '#6366f1',
+                        color: '#fff',
+                        fontWeight: 600,
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      Zuschnitt bestätigen
+                    </button>
+                  </div>
+                </>
+              ) : pages.length === 0 ? (
                 <>
                   <div
                     style={{
@@ -419,7 +564,7 @@ function Upload() {
                         style={{ display: 'none' }}
                         onChange={(e) => {
                           if (e.target.files[0]) {
-                            addPage(e.target.files[0]);
+                            onFileSelected(e.target.files[0]);
                           }
                           e.target.value = '';
                         }}
@@ -434,7 +579,7 @@ function Upload() {
                     style={{ display: 'none' }}
                     onChange={(e) => {
                       if (e.target.files[0]) {
-                        addPage(e.target.files[0]);
+                        onFileSelected(e.target.files[0]);
                       }
                       e.target.value = '';
                     }}
@@ -532,7 +677,7 @@ function Upload() {
                     style={{ display: 'none' }}
                     onChange={(e) => {
                       if (e.target.files[0]) {
-                        addPage(e.target.files[0]);
+                        onFileSelected(e.target.files[0]);
                       }
                       e.target.value = '';
                     }}
@@ -581,7 +726,7 @@ function Upload() {
               )}
             </section>
 
-            {status === 'error' ? (
+            {status === 'error' && !showCropper ? (
               <div style={styles.errorCard}>
                 <div
                   style={{
