@@ -43,7 +43,7 @@ function Login() {
   }, [navigate]);
 
   const handleGoogleLogin = () => {
-    window.location.href = 'https://dokuhero.de/api/auth/google';
+    window.location.href = '/api/auth/google';
   };
 
   return (
