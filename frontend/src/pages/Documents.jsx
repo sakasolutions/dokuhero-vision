@@ -57,6 +57,26 @@ function IconChevronRight({ size = 16, color = '#9ca3af' }) {
   );
 }
 
+function IconLogoutDoor() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"
+        stroke="#9ca3af"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M16 17l5-5-5-5M21 12H9"
+        stroke="#9ca3af"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /**
  * @param {{ modifiedTime?: string; createdTime?: string }} doc
  * @returns {string}
@@ -145,11 +165,50 @@ function Documents() {
             padding: '14px 16px',
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
+            justifyContent: 'space-between',
+            gap: '12px',
           }}
         >
-          <IconHeaderDocuments />
-          <h1 style={{ margin: 0, fontSize: '17px', fontWeight: 600, color: '#111827' }}>Meine Dokumente</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+            <IconHeaderDocuments />
+            <h1
+              style={{
+                margin: 0,
+                fontSize: '17px',
+                fontWeight: 600,
+                color: '#111827',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Meine Dokumente
+            </h1>
+          </div>
+          <button
+            type="button"
+            className="logout-header-button"
+            onClick={() => {
+              localStorage.removeItem('dokuhero_token');
+              localStorage.removeItem('dokuhero_refresh_token');
+              window.location.href = '/';
+            }}
+            aria-label="Abmelden"
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb',
+              background: 'transparent',
+              padding: 0,
+              display: 'grid',
+              placeItems: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <IconLogoutDoor />
+          </button>
         </div>
       </header>
 
@@ -289,6 +348,11 @@ function Documents() {
         ) : null}
       </div>
 
+      <style>{`
+        .logout-header-button:hover {
+          background: #f3f4f6;
+        }
+      `}</style>
       <BottomNav />
     </main>
   );
