@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const sharp = require('sharp');
 
 const requireAuth = require('../middleware/auth');
 const ocrService = require('../services/ocrService');
@@ -11,7 +12,7 @@ const GoogleDriveProvider = require('../services/storage/GoogleDriveProvider');
 const router = express.Router();
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const ALLOWED_EXTENSIONS = new Set(['.jpeg', '.jpg', '.png', '.heic', '.pdf']);
+const ALLOWED_EXTENSIONS = new Set(['.jpeg', '.jpg', '.png', '.heic', '.heif', '.pdf']);
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
   'image/jpg',
@@ -44,11 +45,27 @@ const uploadFields = upload.fields([
 ]);
 
 /**
+ * HEIC/HEIF → JPEG für OpenAI-OCR (sharp/libvips).
+ * @param {Buffer} buffer
+ * @param {string} [mimeType]
+ * @returns {Promise<{ buffer: Buffer; mimeType: string }>}
+ */
+async function bufferAndMimeForOcr(buffer, mimeType) {
+  const m = (mimeType || '').toLowerCase();
+  if (m === 'image/heic' || m === 'image/heif') {
+    const jpegBuffer = await sharp(buffer).jpeg({ quality: 90 }).toBuffer();
+    return { buffer: jpegBuffer, mimeType: 'image/jpeg' };
+  }
+  return { buffer, mimeType: mimeType || 'application/octet-stream' };
+}
+
+/**
  * @param {import('multer').File} file
  * @returns {Promise<string>}
  */
 async function ocrFileToText(file) {
-  const ocr = await ocrService.extractText(file.buffer, file.mimetype);
+  const { buffer, mimeType } = await bufferAndMimeForOcr(file.buffer, file.mimetype);
+  const ocr = await ocrService.extractText(buffer, mimeType);
   return ocr.text || '';
 }
 
@@ -189,6 +206,12 @@ router.post('/upload', requireAuth, (req, res) => {
       // Mehrere Bilder → eine PDF
       if (files.length > 1) {
         try {
+          const imageBuffersForPdf = await Promise.all(
+            files.map(async (file) => {
+              const { buffer } = await bufferAndMimeForOcr(file.buffer, file.mimetype);
+              return buffer;
+            })
+          );
           const PDFDocument = require('pdfkit');
           const pdfBuffer = await new Promise((resolve, reject) => {
             const doc = new PDFDocument({ autoFirstPage: false });
@@ -196,9 +219,9 @@ router.post('/upload', requireAuth, (req, res) => {
             doc.on('data', (chunk) => chunks.push(chunk));
             doc.on('end', () => resolve(Buffer.concat(chunks)));
             doc.on('error', reject);
-            files.forEach((file) => {
+            imageBuffersForPdf.forEach((imgBuf) => {
               doc.addPage({ size: 'A4' });
-              doc.image(file.buffer, 0, 0, {
+              doc.image(imgBuf, 0, 0, {
                 fit: [doc.page.width, doc.page.height],
                 align: 'center',
                 valign: 'center',
@@ -225,7 +248,11 @@ router.post('/upload', requireAuth, (req, res) => {
     }
 
     if (docFile) {
-      const ocr = await ocrService.extractText(docFile.buffer, docFile.mimetype);
+      const { buffer: ocrInputBuffer, mimeType: ocrInputMime } = await bufferAndMimeForOcr(
+        docFile.buffer,
+        docFile.mimetype
+      );
+      const ocr = await ocrService.extractText(ocrInputBuffer, ocrInputMime);
       const m = (docFile.mimetype || '').toLowerCase();
       const isImage = m.startsWith('image/');
       const hasCrop = ocr.croppedBuffer && Buffer.isBuffer(ocr.croppedBuffer) && ocr.croppedBuffer.length > 0;
