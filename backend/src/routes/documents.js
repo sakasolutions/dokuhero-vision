@@ -45,18 +45,20 @@ const uploadFields = upload.fields([
 ]);
 
 /**
- * @param {Buffer[]} buffers
+ * Fügt mehrere JPEG-Buffers (z. B. gecropte Seiten) zu einem PDF zusammen.
+ * @param {Buffer[]} jpegBuffers
  * @returns {Promise<Buffer>}
  */
-async function mergePdfBuffers(buffers) {
-  const merged = await PDFDocument.create();
-  for (const buf of buffers) {
-    const src = await PDFDocument.load(buf);
-    const copied = await merged.copyPages(src, src.getPageIndices());
-    copied.forEach((page) => merged.addPage(page));
+async function mergeJpegBuffersToPdf(jpegBuffers) {
+  const doc = await PDFDocument.create();
+  for (const buf of jpegBuffers) {
+    const jpg = await doc.embedJpg(buf);
+    const w = jpg.width;
+    const h = jpg.height;
+    const page = doc.addPage([w, h]);
+    page.drawImage(jpg, { x: 0, y: 0, width: w, height: h });
   }
-  const bytes = await merged.save();
-  return Buffer.from(bytes);
+  return Buffer.from(await doc.save());
 }
 
 /**
@@ -83,21 +85,36 @@ function buildJsonResponseFileMeta(file) {
  * @param {import('multer').File} primaryFile
  * @param {string} ocrText
  * @param {boolean} forceUpload
- * @param {Buffer | null} [ocrPdfBuffer]
+ * @param {Buffer | null} [ocrCroppedJpeg] — gecroptes Bild (JPEG) oder zusammengefügtes Mehrseiten-PDF
+ * @param {'image/jpeg' | 'application/pdf' | null} [uploadMimeOverride] — sonst fileForUpload = primaryFile
  */
-async function respondWithAnalysisAndStorage(req, res, primaryFile, ocrText, forceUpload, ocrPdfBuffer = null) {
+async function respondWithAnalysisAndStorage(
+  req,
+  res,
+  primaryFile,
+  ocrText,
+  forceUpload,
+  ocrCroppedJpeg = null,
+  uploadMimeOverride = null
+) {
   try {
     const analysis = await aiService.analyzeDocument(ocrText);
     const provider = new GoogleDriveProvider(req.accessToken);
 
     let fileForUpload = primaryFile;
-    if (ocrPdfBuffer && Buffer.isBuffer(ocrPdfBuffer) && ocrPdfBuffer.length > 0) {
+    if (
+      ocrCroppedJpeg &&
+      Buffer.isBuffer(ocrCroppedJpeg) &&
+      ocrCroppedJpeg.length > 0 &&
+      uploadMimeOverride
+    ) {
       const baseName = (primaryFile.originalname || 'document').replace(/\.[^.]+$/i, '') || 'document';
+      const ext = uploadMimeOverride === 'application/pdf' ? 'pdf' : 'jpg';
       fileForUpload = {
-        buffer: ocrPdfBuffer,
-        mimetype: 'application/pdf',
-        originalname: `${baseName}.pdf`,
-        size: ocrPdfBuffer.length,
+        buffer: ocrCroppedJpeg,
+        mimetype: uploadMimeOverride,
+        originalname: `${baseName}.${ext}`,
+        size: ocrCroppedJpeg.length,
       };
     }
 
@@ -185,21 +202,22 @@ router.post('/upload', requireAuth, (req, res) => {
       const combinedText = texts.map((t, i) => `--- Seite ${i + 1} ---\n${t}`).join('\n\n');
 
       const allImages = files.every((f) => (f.mimetype || '').toLowerCase().startsWith('image/'));
-      const pdfBuffers = ocrResults.map((r) => r.pdfBuffer).filter((b) => b && Buffer.isBuffer(b) && b.length > 0);
+      const jpegs = ocrResults.map((r) => r.croppedBuffer).filter((b) => b && Buffer.isBuffer(b) && b.length > 0);
 
       let primaryFile = files[0];
-      let ocrPdfBuffer = ocrResults[0]?.pdfBuffer || null;
+      let ocrFileBuffer = ocrResults[0]?.croppedBuffer || null;
+      let uploadMime = ocrFileBuffer ? 'image/jpeg' : null;
 
-      if (files.length > 1 && allImages && pdfBuffers.length === files.length) {
+      if (files.length > 1 && allImages && jpegs.length === files.length) {
         try {
-          ocrPdfBuffer = await mergePdfBuffers(pdfBuffers);
+          const mergedPdf = await mergeJpegBuffersToPdf(jpegs);
           primaryFile = {
-            buffer: ocrPdfBuffer,
+            buffer: mergedPdf,
             mimetype: 'application/pdf',
             originalname: 'document.pdf',
-            size: ocrPdfBuffer.length,
+            size: mergedPdf.length,
           };
-          return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload, null);
+          return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload, null, null);
         } catch (mergeErr) {
           return res.status(500).json({
             error: mergeErr?.message || 'PDF-Zusammenführung fehlgeschlagen',
@@ -207,12 +225,23 @@ router.post('/upload', requireAuth, (req, res) => {
         }
       }
 
-      return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload, ocrPdfBuffer);
+      return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload, ocrFileBuffer, uploadMime);
     }
 
     if (docFile) {
       const ocr = await ocrService.extractText(docFile.buffer, docFile.mimetype);
-      return respondWithAnalysisAndStorage(req, res, docFile, ocr.text || '', forceUpload, ocr.pdfBuffer);
+      const m = (docFile.mimetype || '').toLowerCase();
+      const isImage = m.startsWith('image/');
+      const hasCrop = ocr.croppedBuffer && Buffer.isBuffer(ocr.croppedBuffer) && ocr.croppedBuffer.length > 0;
+      return respondWithAnalysisAndStorage(
+        req,
+        res,
+        docFile,
+        ocr.text || '',
+        forceUpload,
+        hasCrop && isImage ? ocr.croppedBuffer : null,
+        hasCrop && isImage ? 'image/jpeg' : null
+      );
     }
 
     return res.status(400).json({ error: 'Keine Datei hochgeladen' });
