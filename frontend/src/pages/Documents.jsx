@@ -1,46 +1,82 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
+import BottomNav from '../components/BottomNav';
 import api from '../services/api';
 
-function IconFile() {
+function IconHeaderDocuments({ size = 24, color = '#6366f1' }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M7 3h7l4 4v14H7z" stroke="#6366f1" strokeWidth="1.8" />
-      <path d="M14 3v5h5" stroke="#6366f1" strokeWidth="1.8" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M8 4h4l2 2h4a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path d="M8 12h8M8 16h5" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
 
-function Logo() {
+function IconEmptyState({ size = 48, color = '#e5e7eb' }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-      <div
-        style={{
-          width: '30px',
-          height: '30px',
-          borderRadius: '8px',
-          backgroundColor: '#6366f1',
-          color: '#fff',
-          display: 'grid',
-          placeItems: 'center',
-          fontWeight: 700,
-          fontSize: '20px',
-          lineHeight: 1,
-        }}
-      >
-        D
-      </div>
-      <span style={{ color: '#fff', fontSize: '20px', fontWeight: 600 }}>DokuHero</span>
-    </div>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M8 4h4l2 2h4a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
+        stroke={color}
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+      <path d="M8 10h6M8 14h4" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
   );
+}
+
+function IconPdfCard() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ display: 'block' }}>
+      <path
+        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"
+        fill="#dc2626"
+        fillOpacity="0.12"
+        stroke="#dc2626"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path d="M14 2v6h6" stroke="#dc2626" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M9.5 15.5h5M9.5 12h5" stroke="#dc2626" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconChevronRight({ size = 16, color = '#9ca3af' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M9 6l6 6-6 6" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function formatCreatedTime(createdTime) {
+  if (!createdTime) {
+    return '—';
+  }
+  try {
+    return new Date(createdTime).toLocaleDateString('de-DE', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch {
+    return '—';
+  }
 }
 
 function Documents() {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
   const [documents, setDocuments] = useState([]);
-  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem('dokuhero_token');
@@ -49,33 +85,50 @@ function Documents() {
       return;
     }
 
-    const loadDocuments = async () => {
+    let cancelled = false;
+
+    (async () => {
       try {
-        setLoading(true);
         const response = await api.get('/api/documents', {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setDocuments(response.data?.documents || []);
-      } catch (_error) {
-        setError('Dokumente konnten nicht geladen werden.');
+        if (!cancelled) {
+          setDocuments(response.data?.documents || []);
+        }
+      } catch {
+        if (!cancelled) {
+          setError('Dokumente konnten nicht geladen werden.');
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-    };
+    })();
 
-    loadDocuments();
+    return () => {
+      cancelled = true;
+    };
   }, [navigate]);
 
   return (
     <main
       style={{
         minHeight: '100vh',
-        backgroundColor: '#0a0a0a',
-        color: '#fff',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        backgroundColor: '#f3f4f6',
+        color: '#111827',
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
     >
-      <header style={{ borderBottom: '1px solid #262626' }}>
+      <header
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
+          backgroundColor: '#ffffff',
+          borderBottom: '1px solid #e5e7eb',
+        }}
+      >
         <div
           style={{
             maxWidth: '480px',
@@ -83,60 +136,151 @@ function Documents() {
             padding: '14px 16px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            gap: '10px',
           }}
         >
-          <Logo />
-          <Link to="/upload" style={{ color: '#6366f1', textDecoration: 'none', fontSize: '14px' }}>
-            Zurück
-          </Link>
+          <IconHeaderDocuments />
+          <h1 style={{ margin: 0, fontSize: '17px', fontWeight: 600, color: '#111827' }}>Meine Dokumente</h1>
         </div>
       </header>
 
-      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '24px 16px' }}>
-        <h1 style={{ margin: '0 0 6px', fontSize: '24px', fontWeight: 600 }}>Letzte Dokumente</h1>
-        <p style={{ margin: '0 0 16px', color: '#888', fontSize: '14px' }}>Aus deinem Google Drive</p>
+      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '0 0 70px' }}>
+        {loading ? (
+          <div
+            style={{
+              minHeight: '50vh',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <span
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '999px',
+                border: '3px solid #e5e7eb',
+                borderTopColor: '#6366f1',
+                animation: 'documentsSpin 0.8s linear infinite',
+                display: 'inline-block',
+              }}
+            />
+            <style>{`
+              @keyframes documentsSpin { to { transform: rotate(360deg); } }
+            `}</style>
+          </div>
+        ) : null}
 
-        {loading ? <p style={{ color: '#888' }}>Lade Dokumente...</p> : null}
-        {error ? <p style={{ color: '#ef4444' }}>{error}</p> : null}
+        {!loading && error ? (
+          <p style={{ padding: '24px 16px', textAlign: 'center', color: '#dc2626', fontSize: '14px' }}>{error}</p>
+        ) : null}
+
         {!loading && !error && documents.length === 0 ? (
-          <p style={{ textAlign: 'center', color: '#888', marginTop: '40px' }}>Noch keine Dokumente.</p>
+          <div
+            style={{
+              padding: '48px 24px 24px',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+              <IconEmptyState />
+            </div>
+            <p style={{ margin: 0, fontSize: '16px', color: '#9ca3af' }}>Noch keine Dokumente</p>
+            <button
+              type="button"
+              onClick={() => navigate('/upload')}
+              style={{
+                marginTop: '20px',
+                width: '100%',
+                maxWidth: '280px',
+                height: '48px',
+                border: 'none',
+                borderRadius: '10px',
+                background: '#6366f1',
+                color: '#fff',
+                fontWeight: 600,
+                fontSize: '15px',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              Scanne dein erstes Dokument
+            </button>
+          </div>
         ) : null}
 
         {!loading && !error && documents.length > 0 ? (
-          <div style={{ border: '1px solid #262626', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#141414' }}>
-            {documents.map((doc, index) => (
-              <article
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              padding: '16px',
+            }}
+          >
+            {documents.map((doc) => (
+              <button
                 key={doc.id}
+                type="button"
+                onClick={() => {
+                  if (doc.webViewLink) {
+                    window.open(doc.webViewLink, '_blank', 'noopener,noreferrer');
+                  }
+                }}
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: '20px 1fr auto',
-                  gap: '12px',
+                  display: 'flex',
                   alignItems: 'center',
-                  padding: '12px',
-                  borderBottom: index < documents.length - 1 ? '1px solid #262626' : 'none',
+                  gap: '12px',
+                  padding: '14px 16px',
+                  background: '#fff',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '12px',
+                  cursor: doc.webViewLink ? 'pointer' : 'default',
+                  textAlign: 'left',
+                  fontFamily: 'inherit',
+                  width: '100%',
+                  boxSizing: 'border-box',
                 }}
               >
-                <IconFile />
-                <div>
-                  <p style={{ margin: 0, color: '#fff', fontSize: '14px' }}>{doc.name}</p>
-                  <p style={{ margin: '4px 0 0', color: '#888', fontSize: '13px' }}>{`DokuHero/${doc.name}`}</p>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '8px',
+                    background: '#fef2f2',
+                    display: 'grid',
+                    placeItems: 'center',
+                    padding: '8px',
+                    flexShrink: 0,
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <IconPdfCard />
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ margin: 0, color: '#555', fontSize: '13px' }}>
-                    {doc.createdTime ? new Date(doc.createdTime).toLocaleDateString('de-DE') : 'Kein Datum'}
+                <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      color: '#111827',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {doc.name || 'Dokument'}
                   </p>
-                  {doc.webViewLink ? (
-                    <a href={doc.webViewLink} target="_blank" rel="noreferrer" style={{ color: '#6366f1', textDecoration: 'none', fontSize: '13px' }}>
-                      Öffnen
-                    </a>
-                  ) : null}
+                  <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#9ca3af' }}>{formatCreatedTime(doc.createdTime)}</p>
                 </div>
-              </article>
+                <IconChevronRight />
+              </button>
             ))}
           </div>
         ) : null}
       </div>
+
+      <BottomNav />
     </main>
   );
 }

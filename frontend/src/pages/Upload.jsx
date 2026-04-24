@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import ReactCrop, { convertToPixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 
+import BottomNav from '../components/BottomNav';
 import api from '../services/api';
 
 function Logo() {
@@ -73,15 +74,6 @@ function IconArrowRight({ color = '#fff', size = 16 }) {
   );
 }
 
-function IconLogout() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M9 21H5V3h4" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M13 7l5 5-5 5M18 12H9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 function StepIcon({ state }) {
   if (state === 'done') {
     return (
@@ -130,12 +122,6 @@ function Upload() {
   const addPageInputRef = useRef(null);
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
-
-  const handleLogout = () => {
-    localStorage.removeItem('dokuhero_token');
-    localStorage.removeItem('dokuhero_refresh_token');
-    navigate('/');
-  };
 
   const revokeAllPagePreviews = (list) => {
     list.forEach((p) => {
@@ -440,32 +426,12 @@ function Upload() {
           borderBottom: '1px solid #e5e7eb',
         }}
       >
-        <div style={{ maxWidth: '480px', margin: '0 auto', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ maxWidth: '480px', margin: '0 auto', padding: '14px 16px', display: 'flex', alignItems: 'center' }}>
           <Logo />
-          <button
-            type="button"
-            onClick={handleLogout}
-            aria-label="Abmelden"
-            style={{
-              width: '36px',
-              height: '36px',
-              border: '1px solid #e5e7eb',
-              borderRadius: '8px',
-              backgroundColor: 'transparent',
-              color: '#6b7280',
-              cursor: 'pointer',
-              display: 'grid',
-              placeItems: 'center',
-              transition: 'all 0.15s ease',
-            }}
-            className="logout-button"
-          >
-            <IconLogout />
-          </button>
         </div>
       </header>
 
-      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '20px' }}>
+      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '20px 20px 70px' }}>
         {(status === 'idle' || (status === 'error' && !result)) && (
           <>
             <section
@@ -974,11 +940,6 @@ function Upload() {
           color: #6366f1;
         }
 
-        .logout-button:hover {
-          color: #111827;
-          background: #f3f4f6;
-        }
-
         .spinner {
           display: inline-block;
           border-radius: 999px;
@@ -1017,6 +978,7 @@ function Upload() {
           to { transform: scale(1); opacity: 1; }
         }
       `}</style>
+      <BottomNav />
     </main>
   );
 }
