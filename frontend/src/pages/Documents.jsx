@@ -106,9 +106,7 @@ function formatZuletztHinzugefuegt(iso) {
   }
 }
 
-/**
- * @param {Array<{ mimeType?: string; category?: string; modifiedTime?: string; createdTime?: string }>} files
- */
+/** @deprecated Nur Fallback wenn API noch flache Dateien liefert */
 function groupByCategory(files) {
   const byCat = new Map();
   for (const f of files) {
@@ -130,19 +128,37 @@ function groupByCategory(files) {
       name,
       count: fl.length,
       modifiedTime: maxModified,
+      webViewLink: undefined,
     }))
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { sensitivity: 'base' }));
 }
 
-function newestDocumentIso(files) {
+/**
+ * API liefert Kategorie-Ordner: { id, name, modifiedTime, webViewLink, count, type: 'folder' }
+ * @param {Array<Record<string, unknown>>} rows
+ */
+function normalizeFolderRows(rows) {
+  const list = rows || [];
+  if (list.length === 0) return [];
+  const isFolderApi = list.every((r) => r.type === 'folder' && typeof r.count === 'number');
+  if (isFolderApi) {
+    return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { sensitivity: 'base' }));
+  }
+  return groupByCategory(list);
+}
+
+function totalFileCountFromFolders(folders) {
+  return folders.reduce((sum, f) => sum + (Number(f.count) || 0), 0);
+}
+
+function newestFolderModifiedIso(folders) {
   let best = -Infinity;
   let iso = null;
-  for (const f of files) {
-    if (f.mimeType === 'application/vnd.google-apps.folder') continue;
-    const t = new Date(f.modifiedTime || f.createdTime || 0).getTime();
+  for (const f of folders) {
+    const t = new Date(f.modifiedTime || 0).getTime();
     if (t >= best) {
       best = t;
-      iso = f.modifiedTime || f.createdTime;
+      iso = f.modifiedTime || null;
     }
   }
   return iso;
@@ -174,12 +190,9 @@ function Documents() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const folderGroups = useMemo(() => groupByCategory(documents), [documents]);
-  const totalFiles = useMemo(
-    () => documents.filter((f) => f.mimeType !== 'application/vnd.google-apps.folder').length,
-    [documents]
-  );
-  const newestIso = useMemo(() => newestDocumentIso(documents), [documents]);
+  const folderGroups = useMemo(() => normalizeFolderRows(documents), [documents]);
+  const totalFiles = useMemo(() => totalFileCountFromFolders(folderGroups), [folderGroups]);
+  const newestIso = useMemo(() => newestFolderModifiedIso(folderGroups), [folderGroups]);
 
   useEffect(() => {
     const token = localStorage.getItem('dokuhero_token');
@@ -214,8 +227,8 @@ function Documents() {
     };
   }, [navigate]);
 
-  const showEmpty = !loading && !error && totalFiles === 0;
-  const showContent = !loading && !error && totalFiles > 0;
+  const showEmpty = !loading && !error && folderGroups.length === 0;
+  const showContent = !loading && !error && folderGroups.length > 0;
 
   return (
     <main
@@ -398,7 +411,9 @@ function Documents() {
               <button
                 key={folder.name}
                 type="button"
-                onClick={() => window.open(driveSearchLink(folder.name), '_blank', 'noopener,noreferrer')}
+                onClick={() =>
+                  window.open(folder.webViewLink || driveSearchLink(folder.name), '_blank', 'noopener,noreferrer')
+                }
                 style={{
                   display: 'flex',
                   alignItems: 'center',

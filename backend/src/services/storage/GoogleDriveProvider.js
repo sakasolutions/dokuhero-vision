@@ -108,65 +108,82 @@ class GoogleDriveProvider extends StorageProvider {
     };
   }
 
-  async listFiles(_folderName) {
-    // Schritt 1: DokuHero Hauptordner finden
-    const mainFolderId = await this.getOrCreateMainFolder();
-
-    // Schritt 2: Rekursiv alle Dateien sammeln
-    const allFiles = await this.listFilesRecursive(mainFolderId, null);
-
-    // Sortierung: neueste zuerst
-    allFiles.sort((a, b) => {
-      const tb = new Date(b.modifiedTime || b.createdTime || 0).getTime();
-      const ta = new Date(a.modifiedTime || a.createdTime || 0).getTime();
-      return tb - ta;
-    });
-
-    return allFiles;
-  }
-
   /**
+   * Zählt alle Nicht-Ordner-Dateien unter folderId (mit Pagination).
    * @param {string} folderId
-   * @param {string | null} categoryName — erster Ordner unter DokuHero (= Kategorie), bleibt für tiefer liegende Ordner gleich
+   * @returns {Promise<number>}
    */
-  async listFilesRecursive(folderId, categoryName) {
-    const allFiles = [];
-
+  async countNonFolderFiles(folderId) {
+    let total = 0;
     let pageToken = null;
     do {
       const response = await this.drive.files.list({
-        q: `'${folderId}' in parents and trashed=false`,
-        fields: 'nextPageToken, files(id, name, mimeType, createdTime, modifiedTime, size, webViewLink)',
-        orderBy: 'modifiedTime desc',
+        q: `'${folderId}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'`,
+        fields: 'nextPageToken, files(id)',
         pageSize: 100,
         pageToken: pageToken || undefined,
       });
-
-      const items = response.data.files || [];
-
-      for (const item of items) {
-        if (item.mimeType === 'application/vnd.google-apps.folder') {
-          const childCategory = categoryName == null ? item.name : categoryName;
-          const subFiles = await this.listFilesRecursive(item.id, childCategory);
-          allFiles.push(...subFiles);
-        } else {
-          allFiles.push({
-            id: item.id,
-            name: item.name,
-            mimeType: item.mimeType,
-            createdTime: item.createdTime,
-            modifiedTime: item.modifiedTime,
-            size: item.size,
-            webViewLink: item.webViewLink,
-            category: categoryName || 'Allgemein',
-          });
-        }
-      }
-
+      total += response.data.files?.length || 0;
       pageToken = response.data.nextPageToken || null;
     } while (pageToken);
+    return total;
+  }
 
-    return allFiles;
+  /**
+   * Direkte Kategorie-Ordner unter DokuHero inkl. Dateianzahl (Kategorie + eine Ebene Anbieter-Unterordner).
+   * @param {string} [_folderName]
+   * @returns {Promise<Array<{ id: string; name: string; modifiedTime?: string; webViewLink?: string; count: number; type: string }>>}
+   */
+  async listFiles(_folderName) {
+    const mainFolderId = await this.getOrCreateMainFolder();
+
+    const folders = [];
+    let folderPageToken = null;
+    do {
+      const response = await this.drive.files.list({
+        q: `'${mainFolderId}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,
+        fields: 'nextPageToken, files(id, name, modifiedTime, webViewLink)',
+        orderBy: 'name',
+        pageSize: 100,
+        pageToken: folderPageToken || undefined,
+      });
+      folders.push(...(response.data.files || []));
+      folderPageToken = response.data.nextPageToken || null;
+    } while (folderPageToken);
+
+    const foldersWithCount = await Promise.all(
+      folders.map(async (folder) => {
+        let totalFiles = await this.countNonFolderFiles(folder.id);
+
+        let subPageToken = null;
+        const subFolders = [];
+        do {
+          const subFolderResponse = await this.drive.files.list({
+            q: `'${folder.id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,
+            fields: 'nextPageToken, files(id)',
+            pageSize: 100,
+            pageToken: subPageToken || undefined,
+          });
+          subFolders.push(...(subFolderResponse.data.files || []));
+          subPageToken = subFolderResponse.data.nextPageToken || null;
+        } while (subPageToken);
+
+        for (const subFolder of subFolders) {
+          totalFiles += await this.countNonFolderFiles(subFolder.id);
+        }
+
+        return {
+          id: folder.id,
+          name: folder.name,
+          modifiedTime: folder.modifiedTime,
+          webViewLink: folder.webViewLink,
+          count: totalFiles,
+          type: 'folder',
+        };
+      })
+    );
+
+    return foldersWithCount;
   }
 }
 
