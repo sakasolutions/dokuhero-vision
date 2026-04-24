@@ -113,7 +113,7 @@ class GoogleDriveProvider extends StorageProvider {
     const mainFolderId = await this.getOrCreateMainFolder();
 
     // Schritt 2: Rekursiv alle Dateien sammeln
-    const allFiles = await this.listFilesRecursive(mainFolderId);
+    const allFiles = await this.listFilesRecursive(mainFolderId, null);
 
     // Sortierung: neueste zuerst
     allFiles.sort((a, b) => {
@@ -125,7 +125,11 @@ class GoogleDriveProvider extends StorageProvider {
     return allFiles;
   }
 
-  async listFilesRecursive(folderId) {
+  /**
+   * @param {string} folderId
+   * @param {string | null} categoryName — erster Ordner unter DokuHero (= Kategorie), bleibt für tiefer liegende Ordner gleich
+   */
+  async listFilesRecursive(folderId, categoryName) {
     const allFiles = [];
 
     let pageToken = null;
@@ -142,7 +146,8 @@ class GoogleDriveProvider extends StorageProvider {
 
       for (const item of items) {
         if (item.mimeType === 'application/vnd.google-apps.folder') {
-          const subFiles = await this.listFilesRecursive(item.id);
+          const childCategory = categoryName == null ? item.name : categoryName;
+          const subFiles = await this.listFilesRecursive(item.id, childCategory);
           allFiles.push(...subFiles);
         } else {
           allFiles.push({
@@ -153,6 +158,7 @@ class GoogleDriveProvider extends StorageProvider {
             modifiedTime: item.modifiedTime,
             size: item.size,
             webViewLink: item.webViewLink,
+            category: categoryName || 'Allgemein',
           });
         }
       }
