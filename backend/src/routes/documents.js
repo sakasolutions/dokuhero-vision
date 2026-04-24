@@ -2,7 +2,6 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { PDFDocument } = require('pdf-lib');
 
 const requireAuth = require('../middleware/auth');
 const ocrService = require('../services/ocrService');
@@ -45,27 +44,12 @@ const uploadFields = upload.fields([
 ]);
 
 /**
- * Fügt mehrere JPEG-Buffers (z. B. gecropte Seiten) zu einem PDF zusammen.
- * @param {Buffer[]} jpegBuffers
- * @returns {Promise<Buffer>}
- */
-async function mergeJpegBuffersToPdf(jpegBuffers) {
-  const doc = await PDFDocument.create();
-  for (const buf of jpegBuffers) {
-    const jpg = await doc.embedJpg(buf);
-    const w = jpg.width;
-    const h = jpg.height;
-    const page = doc.addPage([w, h]);
-    page.drawImage(jpg, { x: 0, y: 0, width: w, height: h });
-  }
-  return Buffer.from(await doc.save());
-}
-
-/**
  * @param {import('multer').File} file
+ * @returns {Promise<string>}
  */
-async function ocrFileToResult(file) {
-  return ocrService.extractText(file.buffer, file.mimetype);
+async function ocrFileToText(file) {
+  const ocr = await ocrService.extractText(file.buffer, file.mimetype);
+  return ocr.text || '';
 }
 
 /**
@@ -197,35 +181,47 @@ router.post('/upload', requireAuth, (req, res) => {
 
     if (hasPageFiles) {
       const files = pageFiles;
-      const ocrResults = await Promise.all(files.map((f) => ocrFileToResult(f)));
-      const texts = ocrResults.map((r) => r.text || '');
+
+      // OCR alle Seiten
+      const texts = await Promise.all(files.map((f) => ocrFileToText(f)));
       const combinedText = texts.map((t, i) => `--- Seite ${i + 1} ---\n${t}`).join('\n\n');
 
-      const allImages = files.every((f) => (f.mimetype || '').toLowerCase().startsWith('image/'));
-      const jpegs = ocrResults.map((r) => r.croppedBuffer).filter((b) => b && Buffer.isBuffer(b) && b.length > 0);
-
-      let primaryFile = files[0];
-      let ocrFileBuffer = ocrResults[0]?.croppedBuffer || null;
-      let uploadMime = ocrFileBuffer ? 'image/jpeg' : null;
-
-      if (files.length > 1 && allImages && jpegs.length === files.length) {
+      // Mehrere Bilder → eine PDF
+      if (files.length > 1) {
         try {
-          const mergedPdf = await mergeJpegBuffersToPdf(jpegs);
-          primaryFile = {
-            buffer: mergedPdf,
+          const PDFDocument = require('pdfkit');
+          const pdfBuffer = await new Promise((resolve, reject) => {
+            const doc = new PDFDocument({ autoFirstPage: false });
+            const chunks = [];
+            doc.on('data', (chunk) => chunks.push(chunk));
+            doc.on('end', () => resolve(Buffer.concat(chunks)));
+            doc.on('error', reject);
+            files.forEach((file) => {
+              doc.addPage({ size: 'A4' });
+              doc.image(file.buffer, 0, 0, {
+                fit: [doc.page.width, doc.page.height],
+                align: 'center',
+                valign: 'center',
+              });
+            });
+            doc.end();
+          });
+          const primaryFile = {
+            buffer: pdfBuffer,
             mimetype: 'application/pdf',
             originalname: 'document.pdf',
-            size: mergedPdf.length,
+            size: pdfBuffer.length,
           };
-          return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload, null, null);
-        } catch (mergeErr) {
+          return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload);
+        } catch (e) {
           return res.status(500).json({
-            error: mergeErr?.message || 'PDF-Zusammenführung fehlgeschlagen',
+            error: e?.message || 'PDF-Erstellung fehlgeschlagen',
           });
         }
       }
 
-      return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload, ocrFileBuffer, uploadMime);
+      // Nur eine Seite
+      return respondWithAnalysisAndStorage(req, res, files[0], combinedText, forceUpload);
     }
 
     if (docFile) {
