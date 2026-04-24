@@ -19,6 +19,20 @@ function IconCloudNav({ size = 22, color = 'currentColor' }) {
   );
 }
 
+function IconMailNav({ size = 22, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 6h16v12H4V6Z"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path d="M4 8l8 6 8-6" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function IconDocumentList({ size = 22, color = 'currentColor' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -46,6 +60,7 @@ function BottomNav() {
 
   const isUpload = location.pathname === '/upload';
   const isDocuments = location.pathname === '/documents';
+  const isInbox = location.pathname === '/inbox';
 
   const tab = (path, label, active, icon) => (
     <button
@@ -97,6 +112,12 @@ function BottomNav() {
         'Dokumente',
         isDocuments,
         <IconDocumentList color={isDocuments ? '#6366f1' : '#9ca3af'} />
+      )}
+      {tab(
+        '/inbox',
+        'Posteingang',
+        isInbox,
+        <IconMailNav color={isInbox ? '#6366f1' : '#9ca3af'} />
       )}
     </nav>
   );
