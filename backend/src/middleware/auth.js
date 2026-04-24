@@ -8,6 +8,9 @@ function requireAuth(req, res, next) {
   const token = authHeader.split(' ')[1];
   req.accessToken = token;
 
+  const userIdHeader = req.headers['x-user-id'];
+  req.userId = typeof userIdHeader === 'string' && userIdHeader.trim() ? userIdHeader.trim() : null;
+
   return next();
 }
 

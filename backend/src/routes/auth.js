@@ -1,7 +1,13 @@
 const express = require('express');
 const { google } = require('googleapis');
+const { v5: uuidv5 } = require('uuid');
+
+const supabaseService = require('../services/supabaseService');
 
 const OAuth2Client = google.auth.OAuth2;
+
+/** DNS-Namespace (RFC 4122) für deterministische User-UUID aus Google-ID */
+const GOOGLE_USER_UUID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 
 const router = express.Router();
 
@@ -119,11 +125,29 @@ router.get('/callback', async (req, res) => {
       return res.status(500).json({ success: false, error: 'No access token returned by Google' });
     }
 
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const { data: user } = await oauth2.userinfo.get();
+
+    const googleId = String(user?.sub || user?.id || user?.email || '').trim() || `anon_${Date.now()}`;
+    const userId = uuidv5(googleId, GOOGLE_USER_UUID_NAMESPACE);
+
+    try {
+      await supabaseService.upsertUser({
+        id: userId,
+        email: user?.email || null,
+        name: user?.name || null,
+        avatar_url: user?.picture || null,
+      });
+    } catch (err) {
+      console.error('[auth/callback] Supabase upsertUser:', err?.message || err);
+    }
+
     const params = new URLSearchParams();
     params.set('access_token', tokens.access_token);
     if (tokens.refresh_token) {
       params.set('refresh_token', tokens.refresh_token);
     }
+    params.set('user_id', userId);
     const redirectUrl = `${process.env.FRONTEND_URL}/upload?${params.toString()}`;
     return res.redirect(redirectUrl);
   } catch (error) {

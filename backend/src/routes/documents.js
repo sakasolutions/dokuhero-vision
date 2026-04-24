@@ -7,6 +7,7 @@ const sharp = require('sharp');
 const requireAuth = require('../middleware/auth');
 const ocrService = require('../services/ocrService');
 const aiService = require('../services/aiService');
+const supabaseService = require('../services/supabaseService');
 const GoogleDriveProvider = require('../services/storage/GoogleDriveProvider');
 
 const router = express.Router();
@@ -82,6 +83,44 @@ function buildJsonResponseFileMeta(file) {
 
 /**
  * @param {import('express').Request} req
+ * @param {import('multer').File | { buffer: Buffer; mimetype: string; originalname: string; size: number }} primaryFile
+ * @param {string} ocrText
+ * @param {{ ordner: string; dateiname: string; typ: string; absender?: string }} analysis
+ * @param {{ fileId?: string; fileName?: string; webViewLink?: string; duplicate?: boolean }} storageResult
+ * @param {string} [storagePath]
+ */
+async function persistDocumentAndScanCount(req, primaryFile, ocrText, analysis, storageResult, storagePath) {
+  if (!req.userId || !storageResult?.fileId) {
+    return;
+  }
+
+  try {
+    await supabaseService.saveDocument(req.userId, {
+      filename: `${analysis.dateiname}.pdf`,
+      originalFilename: primaryFile.originalname,
+      category: analysis.ordner,
+      subcategory: analysis.absender || null,
+      provider: 'google_drive',
+      storagePath: storagePath || null,
+      driveFileId: storageResult.fileId,
+      webViewLink: storageResult.webViewLink || null,
+      ocrText: ocrText || '',
+      documentType: analysis.typ,
+      amount: null,
+      documentDate: null,
+      dueDate: null,
+      sender: analysis.absender || null,
+      mimeType: primaryFile.mimetype,
+      size: primaryFile.size,
+    });
+    await supabaseService.incrementScanCount(req.userId);
+  } catch (err) {
+    console.error('[documents] Supabase saveDocument / incrementScanCount:', err?.message || err);
+  }
+}
+
+/**
+ * @param {import('express').Request} req
  * @param {import('express').Response} res
  * @param {import('multer').File} primaryFile
  * @param {string} ocrText
@@ -128,6 +167,9 @@ async function respondWithAnalysisAndStorage(
         forceUpload
       );
 
+      const storagePath = `${analysis.ordner}/${storageResult.fileName || `${analysis.dateiname}.pdf`}`;
+      await persistDocumentAndScanCount(req, fileForUpload, ocrText, analysis, storageResult, storagePath);
+
       return res.json({
         success: true,
         message: storageResult.duplicate ? 'Dokument bereits vorhanden' : 'Dokument erfolgreich abgelegt',
@@ -142,7 +184,7 @@ async function respondWithAnalysisAndStorage(
           fileName: storageResult.fileName,
           webViewLink: storageResult.webViewLink,
           duplicate: Boolean(storageResult.duplicate),
-          path: `${analysis.ordner}/${storageResult.fileName || `${analysis.dateiname}.pdf`}`,
+          path: storagePath,
         },
       });
     } catch (uploadError) {

@@ -7,6 +7,7 @@ function fallbackResult() {
     ordner: 'Sonstiges',
     dateiname: `Dokument_${Date.now()}`,
     typ: 'Unbekannt',
+    absender: '',
   };
 }
 
@@ -20,6 +21,7 @@ async function analyzeDocument(ocrText) {
       ordner: 'Sonstiges',
       dateiname: 'Unbekanntes_Dokument',
       typ: 'Unbekannt',
+      absender: '',
     };
   }
 
@@ -104,6 +106,7 @@ WICHTIG:
       ordner: parsed.ordner,
       dateiname: sanitizeFilename(parsed.dateiname),
       typ: parsed.typ,
+      absender: typeof parsed.absender === 'string' ? parsed.absender.trim() : '',
     };
   } catch (_error) {
     return fallbackResult();
