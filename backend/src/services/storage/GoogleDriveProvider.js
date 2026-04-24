@@ -117,7 +117,7 @@ class GoogleDriveProvider extends StorageProvider {
 
     const listResponse = await this.drive.files.list({
       q: `'${folderId}' in parents and trashed=false`,
-      fields: 'files(id, name, createdTime, size, webViewLink)',
+      fields: 'files(id, name, createdTime, modifiedTime, size, webViewLink)',
       orderBy: 'createdTime desc',
     });
 

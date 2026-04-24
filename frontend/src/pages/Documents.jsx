@@ -57,18 +57,24 @@ function IconChevronRight({ size = 16, color = '#9ca3af' }) {
   );
 }
 
-function formatCreatedTime(createdTime) {
-  if (!createdTime) {
-    return '—';
+/**
+ * @param {{ modifiedTime?: string; createdTime?: string }} doc
+ * @returns {string}
+ */
+function formatZuletztGeaendert(doc) {
+  const iso = doc.modifiedTime || doc.createdTime;
+  if (!iso) {
+    return 'Zuletzt geändert: —';
   }
   try {
-    return new Date(createdTime).toLocaleDateString('de-DE', {
+    const dateStr = new Date(iso).toLocaleDateString('de-DE', {
       day: 'numeric',
       month: 'long',
       year: 'numeric',
     });
+    return `Zuletzt geändert: ${dateStr}`;
   } catch {
-    return '—';
+    return 'Zuletzt geändert: —';
   }
 }
 
@@ -93,7 +99,10 @@ function Documents() {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!cancelled) {
-          setDocuments(response.data?.documents || []);
+          const list = response.data?.documents || [];
+          setDocuments(
+            [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { sensitivity: 'base' }))
+          );
         }
       } catch {
         if (!cancelled) {
@@ -271,7 +280,7 @@ function Documents() {
                   >
                     {doc.name || 'Dokument'}
                   </p>
-                  <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#9ca3af' }}>{formatCreatedTime(doc.createdTime)}</p>
+                  <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#9ca3af' }}>{formatZuletztGeaendert(doc)}</p>
                 </div>
                 <IconChevronRight />
               </button>
