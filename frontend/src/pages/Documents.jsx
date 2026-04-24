@@ -77,6 +77,11 @@ function driveSearchLink(folderName) {
   return `https://drive.google.com/drive/search?q=${encodeURIComponent(q)}`;
 }
 
+function driveSubfolderSearchLink(categoryName, subName) {
+  const q = `DokuHero ${categoryName} ${subName}`;
+  return `https://drive.google.com/drive/search?q=${encodeURIComponent(q)}`;
+}
+
 function formatZuletztGeaendertKurz(iso) {
   if (!iso) return '—';
   try {
@@ -125,10 +130,13 @@ function groupByCategory(files) {
   }
   return Array.from(byCat.values())
     .map(({ name, files: fl, maxModified }) => ({
+      id: name,
       name,
       count: fl.length,
       modifiedTime: maxModified,
       webViewLink: undefined,
+      type: 'folder',
+      subFolders: [],
     }))
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { sensitivity: 'base' }));
 }
@@ -142,7 +150,12 @@ function normalizeFolderRows(rows) {
   if (list.length === 0) return [];
   const isFolderApi = list.every((r) => r.type === 'folder' && typeof r.count === 'number');
   if (isFolderApi) {
-    return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { sensitivity: 'base' }));
+    return [...list]
+      .map((r) => ({
+        ...r,
+        subFolders: Array.isArray(r.subFolders) ? r.subFolders : [],
+      }))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { sensitivity: 'base' }));
   }
   return groupByCategory(list);
 }
@@ -154,11 +167,19 @@ function totalFileCountFromFolders(folders) {
 function newestFolderModifiedIso(folders) {
   let best = -Infinity;
   let iso = null;
+  const consider = (t) => {
+    if (!t) return;
+    const ts = new Date(t).getTime();
+    if (!Number.isFinite(ts)) return;
+    if (ts >= best) {
+      best = ts;
+      iso = t;
+    }
+  };
   for (const f of folders) {
-    const t = new Date(f.modifiedTime || 0).getTime();
-    if (t >= best) {
-      best = t;
-      iso = f.modifiedTime || null;
+    consider(f.modifiedTime);
+    for (const s of f.subFolders || []) {
+      consider(s.modifiedTime);
     }
   }
   return iso;
@@ -407,75 +428,205 @@ function Documents() {
             </p>
 
             <div style={{ padding: '0 16px' }}>
-            {folderGroups.map((folder) => (
-              <button
-                key={folder.name}
-                type="button"
-                onClick={() =>
-                  window.open(folder.webViewLink || driveSearchLink(folder.name), '_blank', 'noopener,noreferrer')
+              {folderGroups.map((folder) => {
+                const hasSubs = Array.isArray(folder.subFolders) && folder.subFolders.length > 0;
+                const folderKey = folder.id || folder.name;
+
+                if (hasSubs) {
+                  return (
+                    <div key={folderKey} style={{ marginBottom: '14px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '8px 0 6px',
+                          marginBottom: '6px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '8px',
+                            background: '#eef2ff',
+                            display: 'grid',
+                            placeItems: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <IconFolderCard size={18} />
+                        </div>
+                        <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>
+                          {folder.name} ({folder.count})
+                        </p>
+                      </div>
+                      <div
+                        style={{
+                          paddingLeft: '14px',
+                          marginLeft: '8px',
+                          borderLeft: '2px solid #e5e7eb',
+                        }}
+                      >
+                        {folder.subFolders.map((sub) => (
+                          <button
+                            key={sub.id}
+                            type="button"
+                            onClick={() =>
+                              window.open(
+                                sub.webViewLink || driveSubfolderSearchLink(folder.name, sub.name),
+                                '_blank',
+                                'noopener,noreferrer'
+                              )
+                            }
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                              width: '100%',
+                              margin: '0 0 6px',
+                              padding: '10px 12px',
+                              background: '#fff',
+                              border: '1px solid #e5e7eb',
+                              borderRadius: '10px',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              fontFamily: 'inherit',
+                              boxSizing: 'border-box',
+                            }}
+                          >
+                            <span
+                              style={{
+                                color: '#9ca3af',
+                                fontSize: '13px',
+                                flexShrink: 0,
+                                fontFamily: 'monospace',
+                              }}
+                              aria-hidden
+                            >
+                              └
+                            </span>
+                            <div
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '6px',
+                                background: '#f5f5ff',
+                                display: 'grid',
+                                placeItems: 'center',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <IconFolderCard size={16} />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                              <p
+                                style={{
+                                  margin: 0,
+                                  fontSize: '14px',
+                                  fontWeight: 600,
+                                  color: '#111827',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {sub.name} ({sub.count})
+                              </p>
+                              <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#9ca3af' }}>
+                                Zuletzt geändert: {formatZuletztGeaendertKurz(sub.modifiedTime)}
+                              </p>
+                            </div>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <span style={{ fontSize: '11px', color: '#6366f1', fontWeight: 600 }}>
+                                In Drive öffnen
+                              </span>
+                              <IconChevronRight size={14} color="#6366f1" />
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
                 }
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  margin: '0 0 8px',
-                  padding: '14px 16px',
-                  background: '#fff',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  fontFamily: 'inherit',
-                  width: '100%',
-                  boxSizing: 'border-box',
-                }}
-              >
-                <div
-                  style={{
-                    width: '36px',
-                    height: '36px',
-                    borderRadius: '8px',
-                    background: '#eef2ff',
-                    display: 'grid',
-                    placeItems: 'center',
-                    padding: '8px',
-                    flexShrink: 0,
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  <IconFolderCard />
-                </div>
-                <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                  <p
+
+                return (
+                  <button
+                    key={folderKey}
+                    type="button"
+                    onClick={() =>
+                      window.open(folder.webViewLink || driveSearchLink(folder.name), '_blank', 'noopener,noreferrer')
+                    }
                     style={{
-                      margin: 0,
-                      fontSize: '15px',
-                      fontWeight: 600,
-                      color: '#111827',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      margin: '0 0 8px',
+                      padding: '14px 16px',
+                      background: '#fff',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontFamily: 'inherit',
+                      width: '100%',
+                      boxSizing: 'border-box',
                     }}
                   >
-                    {folder.name}
-                  </p>
-                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#9ca3af' }}>
-                    {folder.count} Dokumente · Zuletzt geändert: {formatZuletztGeaendertKurz(folder.modifiedTime)}
-                  </p>
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    flexShrink: 0,
-                  }}
-                >
-                  <span style={{ fontSize: '12px', color: '#6366f1', fontWeight: 500 }}>In Drive öffnen</span>
-                  <IconChevronRight color="#6366f1" />
-                </div>
-              </button>
-            ))}
+                    <div
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '8px',
+                        background: '#eef2ff',
+                        display: 'grid',
+                        placeItems: 'center',
+                        padding: '8px',
+                        flexShrink: 0,
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      <IconFolderCard />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: '15px',
+                          fontWeight: 600,
+                          color: '#111827',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {folder.name}
+                      </p>
+                      <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                        {folder.count} Dokumente · Zuletzt geändert: {formatZuletztGeaendertKurz(folder.modifiedTime)}
+                      </p>
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <span style={{ fontSize: '12px', color: '#6366f1', fontWeight: 500 }}>In Drive öffnen</span>
+                      <IconChevronRight color="#6366f1" />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </>
         ) : null}

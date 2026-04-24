@@ -68,13 +68,21 @@ REGELN für dateiname:
   2023-12_Steuerbescheid_Finanzamt
   2024-02_Gehaltsabrechnung_Musterfirma
   2024-03_Arztbrief_Kardiologie-Muenchen
+  2026-04_Bescheid_Finanzamt-Heidenheim
+  2026-03_Brief_Landratsamt-Heidenheim
+  2026-04_Kontoauszug_ING
+  2026-03_Kontoauszug_Sparkasse
+  2026-04_Police_Allianz
+  2026-03_Kuendigung_HUK
 
 WICHTIG: 
 - Lieber eine spezifische Kategorie als Sonstiges
 - Absender immer auf Deutsch
 - Wenn Datum nicht erkennbar: aktuelles Jahr + aktueller Monat
 - Format ist IMMER exakt: YYYY-MM_Typ_Absender
-- Der Absender steht IMMER als letzter Teil im dateiname
+- Der Absender steht IMMER als letztes Element im Dateinamen (nach dem letzten Unterstrich)
+- Bei Behörden: Behördenname plus Ort wenn erkennbar, mit Bindestrich (z.B. Finanzamt-Heidenheim, Landratsamt-Heidenheim)
+- Bei Bank: konkreter Bankname (ING, Sparkasse, DKB, Commerzbank etc.)
 - Gute Beispiele: 2026-04_Rechnung_IONOS, 2026-04_Rechnung_Canva, 2026-04_Kontoauszug_Sparkasse
 - Schlechte Beispiele: 2026-04_Rechnung, 2026-04_IONOS_Rechnung`,
         },

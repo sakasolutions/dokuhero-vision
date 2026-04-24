@@ -130,9 +130,9 @@ class GoogleDriveProvider extends StorageProvider {
   }
 
   /**
-   * Direkte Kategorie-Ordner unter DokuHero inkl. Dateianzahl (Kategorie + eine Ebene Anbieter-Unterordner).
+   * Kategorie-Ordner unter DokuHero; optional Anbieter-Unterordner mit eigener Dateianzahl.
    * @param {string} [_folderName]
-   * @returns {Promise<Array<{ id: string; name: string; modifiedTime?: string; webViewLink?: string; count: number; type: string }>>}
+   * @returns {Promise<Array<{ id: string; name: string; modifiedTime?: string; webViewLink?: string; count: number; type: string; subFolders: Array<{ id: string; name: string; count: number; webViewLink?: string; modifiedTime?: string }> }>>}
    */
   async listFiles(_folderName) {
     const mainFolderId = await this.getOrCreateMainFolder();
@@ -156,21 +156,32 @@ class GoogleDriveProvider extends StorageProvider {
         let totalFiles = await this.countNonFolderFiles(folder.id);
 
         let subPageToken = null;
-        const subFolders = [];
+        const subFolderMetas = [];
         do {
           const subFolderResponse = await this.drive.files.list({
             q: `'${folder.id}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,
-            fields: 'nextPageToken, files(id)',
+            fields: 'nextPageToken, files(id, name, modifiedTime, webViewLink)',
             pageSize: 100,
             pageToken: subPageToken || undefined,
           });
-          subFolders.push(...(subFolderResponse.data.files || []));
+          subFolderMetas.push(...(subFolderResponse.data.files || []));
           subPageToken = subFolderResponse.data.nextPageToken || null;
         } while (subPageToken);
 
-        for (const subFolder of subFolders) {
-          totalFiles += await this.countNonFolderFiles(subFolder.id);
+        const subFolders = [];
+        for (const sub of subFolderMetas) {
+          const subCount = await this.countNonFolderFiles(sub.id);
+          totalFiles += subCount;
+          subFolders.push({
+            id: sub.id,
+            name: sub.name,
+            count: subCount,
+            webViewLink: sub.webViewLink,
+            modifiedTime: sub.modifiedTime,
+          });
         }
+
+        subFolders.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { sensitivity: 'base' }));
 
         return {
           id: folder.id,
@@ -179,6 +190,7 @@ class GoogleDriveProvider extends StorageProvider {
           webViewLink: folder.webViewLink,
           count: totalFiles,
           type: 'folder',
+          subFolders,
         };
       })
     );
