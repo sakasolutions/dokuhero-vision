@@ -396,16 +396,20 @@ function Upload() {
     const tokenFromUrl = currentUrl.searchParams.get('access_token');
     const refreshTokenFromUrl = currentUrl.searchParams.get('refresh_token');
 
-    if (tokenFromUrl) {
-      localStorage.setItem('dokuhero_token', tokenFromUrl);
-      setToken(tokenFromUrl);
+    if (tokenFromUrl || refreshTokenFromUrl) {
+      if (tokenFromUrl) {
+        localStorage.setItem('dokuhero_token', tokenFromUrl);
+        setToken(tokenFromUrl);
+      }
       if (refreshTokenFromUrl) {
         localStorage.setItem('dokuhero_refresh_token', refreshTokenFromUrl);
       }
       currentUrl.searchParams.delete('access_token');
       currentUrl.searchParams.delete('refresh_token');
       window.history.replaceState({}, document.title, currentUrl.toString());
-      return;
+      if (tokenFromUrl) {
+        return;
+      }
     }
 
     const existingToken = localStorage.getItem('dokuhero_token');

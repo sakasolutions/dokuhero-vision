@@ -42,12 +42,12 @@ router.get('/callback', async (req, res) => {
       return res.status(500).json({ success: false, error: 'No access token returned by Google' });
     }
 
-    const refreshTokenParam = tokens.refresh_token
-      ? `&refresh_token=${encodeURIComponent(tokens.refresh_token)}`
-      : '';
-    const redirectUrl = `${process.env.FRONTEND_URL}/upload?access_token=${encodeURIComponent(
-      tokens.access_token
-    )}${refreshTokenParam}`;
+    const params = new URLSearchParams();
+    params.set('access_token', tokens.access_token);
+    if (tokens.refresh_token) {
+      params.set('refresh_token', tokens.refresh_token);
+    }
+    const redirectUrl = `${process.env.FRONTEND_URL}/upload?${params.toString()}`;
     return res.redirect(redirectUrl);
   } catch (error) {
     return res.status(500).json({
