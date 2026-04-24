@@ -81,6 +81,13 @@ function IconLogoutDoor() {
  * @param {{ modifiedTime?: string; createdTime?: string }} doc
  * @returns {string}
  */
+function formatDisplayFileName(name) {
+  if (!name) {
+    return 'Dokument';
+  }
+  return name.replace('.pdf', '').replace(/_/g, ' ');
+}
+
 function formatZuletztGeaendert(doc) {
   const iso = doc.modifiedTime || doc.createdTime;
   if (!iso) {
@@ -120,9 +127,7 @@ function Documents() {
         });
         if (!cancelled) {
           const list = response.data?.documents || [];
-          setDocuments(
-            [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { sensitivity: 'base' }))
-          );
+          setDocuments([...list]);
         }
       } catch {
         if (!cancelled) {
@@ -337,7 +342,7 @@ function Documents() {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {doc.name || 'Dokument'}
+                    {formatDisplayFileName(doc.name)}
                   </p>
                   <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#9ca3af' }}>{formatZuletztGeaendert(doc)}</p>
                 </div>

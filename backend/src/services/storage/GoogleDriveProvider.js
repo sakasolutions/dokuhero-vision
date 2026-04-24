@@ -108,20 +108,59 @@ class GoogleDriveProvider extends StorageProvider {
     };
   }
 
-  async listFiles(folder) {
+  async listFiles(_folderName) {
+    // Schritt 1: DokuHero Hauptordner finden
     const mainFolderId = await this.getOrCreateMainFolder();
-    const folderId =
-      folder && folder !== 'DokuHero'
-        ? await this.createFolderIfNotExists(folder, mainFolderId)
-        : mainFolderId;
 
-    const listResponse = await this.drive.files.list({
-      q: `'${folderId}' in parents and trashed=false`,
-      fields: 'files(id, name, createdTime, modifiedTime, size, webViewLink)',
-      orderBy: 'createdTime desc',
+    // Schritt 2: Rekursiv alle Dateien sammeln
+    const allFiles = await this.listFilesRecursive(mainFolderId);
+
+    // Sortierung: neueste zuerst
+    allFiles.sort((a, b) => {
+      const tb = new Date(b.modifiedTime || b.createdTime || 0).getTime();
+      const ta = new Date(a.modifiedTime || a.createdTime || 0).getTime();
+      return tb - ta;
     });
 
-    return listResponse.data.files || [];
+    return allFiles;
+  }
+
+  async listFilesRecursive(folderId) {
+    const allFiles = [];
+
+    let pageToken = null;
+    do {
+      const response = await this.drive.files.list({
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: 'nextPageToken, files(id, name, mimeType, createdTime, modifiedTime, size, webViewLink)',
+        orderBy: 'modifiedTime desc',
+        pageSize: 100,
+        pageToken: pageToken || undefined,
+      });
+
+      const items = response.data.files || [];
+
+      for (const item of items) {
+        if (item.mimeType === 'application/vnd.google-apps.folder') {
+          const subFiles = await this.listFilesRecursive(item.id);
+          allFiles.push(...subFiles);
+        } else {
+          allFiles.push({
+            id: item.id,
+            name: item.name,
+            mimeType: item.mimeType,
+            createdTime: item.createdTime,
+            modifiedTime: item.modifiedTime,
+            size: item.size,
+            webViewLink: item.webViewLink,
+          });
+        }
+      }
+
+      pageToken = response.data.nextPageToken || null;
+    } while (pageToken);
+
+    return allFiles;
   }
 }
 
