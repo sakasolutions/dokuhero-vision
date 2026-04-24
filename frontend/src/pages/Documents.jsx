@@ -212,8 +212,15 @@ function Documents() {
   const [error, setError] = useState(null);
 
   const folderGroups = useMemo(() => normalizeFolderRows(documents), [documents]);
+  const folderGroupsVisible = useMemo(
+    () =>
+      folderGroups.filter(
+        (folder) => Number(folder.count) > 0 || (Array.isArray(folder.subFolders) && folder.subFolders.length > 0)
+      ),
+    [folderGroups]
+  );
   const totalFiles = useMemo(() => totalFileCountFromFolders(folderGroups), [folderGroups]);
-  const newestIso = useMemo(() => newestFolderModifiedIso(folderGroups), [folderGroups]);
+  const newestIso = useMemo(() => newestFolderModifiedIso(folderGroupsVisible), [folderGroupsVisible]);
 
   useEffect(() => {
     const token = localStorage.getItem('dokuhero_token');
@@ -248,8 +255,8 @@ function Documents() {
     };
   }, [navigate]);
 
-  const showEmpty = !loading && !error && folderGroups.length === 0;
-  const showContent = !loading && !error && folderGroups.length > 0;
+  const showEmpty = !loading && !error && totalFiles === 0 && folderGroupsVisible.length === 0;
+  const showContent = !loading && !error && (totalFiles > 0 || folderGroupsVisible.length > 0);
 
   return (
     <main
@@ -408,7 +415,7 @@ function Documents() {
                 }}
               >
                 <StatCell value={totalFiles} label="Dokumente gesamt" />
-                <StatCell value={folderGroups.length} label="Kategorien" />
+                <StatCell value={folderGroupsVisible.length} label="Kategorien" />
                 <StatCell value={formatZuletztHinzugefuegt(newestIso)} label="Zuletzt hinzugefügt" />
               </div>
             </section>
@@ -428,7 +435,7 @@ function Documents() {
             </p>
 
             <div style={{ padding: '0 16px' }}>
-              {folderGroups.map((folder) => {
+              {folderGroupsVisible.map((folder) => {
                 const hasSubs = Array.isArray(folder.subFolders) && folder.subFolders.length > 0;
                 const folderKey = folder.id || folder.name;
 
@@ -461,13 +468,7 @@ function Documents() {
                           {folder.name} ({folder.count})
                         </p>
                       </div>
-                      <div
-                        style={{
-                          paddingLeft: '14px',
-                          marginLeft: '8px',
-                          borderLeft: '2px solid #e5e7eb',
-                        }}
-                      >
+                      <div style={{ marginLeft: '20px' }}>
                         {folder.subFolders.map((sub) => (
                           <button
                             key={sub.id}
@@ -495,17 +496,6 @@ function Documents() {
                               boxSizing: 'border-box',
                             }}
                           >
-                            <span
-                              style={{
-                                color: '#9ca3af',
-                                fontSize: '13px',
-                                flexShrink: 0,
-                                fontFamily: 'monospace',
-                              }}
-                              aria-hidden
-                            >
-                              └
-                            </span>
                             <div
                               style={{
                                 width: '28px',
@@ -529,6 +519,7 @@ function Documents() {
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
                                   whiteSpace: 'nowrap',
+                                  maxWidth: '160px',
                                 }}
                               >
                                 {sub.name} ({sub.count})
