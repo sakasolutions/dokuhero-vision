@@ -82,6 +82,40 @@ function buildJsonResponseFileMeta(file) {
 }
 
 /**
+ * @param {Record<string, unknown>} [body]
+ * @returns {{ ordner: string; dateiname: string; typ: string; absender: string } | null}
+ */
+function parseExistingAnalysis(body) {
+  const raw = body?.existingAnalysis;
+  if (raw == null || raw === '') {
+    return null;
+  }
+  let obj = raw;
+  if (typeof raw === 'string') {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!obj || typeof obj !== 'object') {
+    return null;
+  }
+  const ordner = obj.ordner;
+  const dateiname = obj.dateiname;
+  const typ = obj.typ;
+  if (typeof ordner !== 'string' || typeof dateiname !== 'string' || typeof typ !== 'string') {
+    return null;
+  }
+  return {
+    ordner: ordner.trim(),
+    dateiname: dateiname.trim(),
+    typ: typ.trim(),
+    absender: typeof obj.absender === 'string' ? obj.absender.trim() : '',
+  };
+}
+
+/**
  * @param {import('express').Request} req
  * @param {import('multer').File | { buffer: Buffer; mimetype: string; originalname: string; size: number }} primaryFile
  * @param {string} ocrText
@@ -127,7 +161,17 @@ async function persistDocumentAndScanCount(req, primaryFile, ocrText, analysis, 
  * @param {boolean} forceUpload
  * @param {Buffer | null} [ocrCroppedJpeg] — gecroptes Bild (JPEG) oder zusammengefügtes Mehrseiten-PDF
  * @param {'image/jpeg' | 'application/pdf' | null} [uploadMimeOverride] — sonst fileForUpload = primaryFile
+ * @param {{ ordner: string; dateiname: string; typ: string; absender?: string } | null} [existingAnalysis]
  */
+function analysisResponsePayload(analysis) {
+  return {
+    ordner: analysis.ordner,
+    dateiname: analysis.dateiname,
+    typ: analysis.typ,
+    absender: analysis.absender || '',
+  };
+}
+
 async function respondWithAnalysisAndStorage(
   req,
   res,
@@ -135,10 +179,32 @@ async function respondWithAnalysisAndStorage(
   ocrText,
   forceUpload,
   ocrCroppedJpeg = null,
-  uploadMimeOverride = null
+  uploadMimeOverride = null,
+  existingAnalysis = null
 ) {
   try {
-    const analysis = await aiService.analyzeDocument(ocrText);
+    const usedExisting =
+      Boolean(forceUpload) &&
+      existingAnalysis != null &&
+      typeof existingAnalysis.ordner === 'string' &&
+      typeof existingAnalysis.dateiname === 'string' &&
+      typeof existingAnalysis.typ === 'string';
+
+    let analysis;
+    if (usedExisting) {
+      const base = String(existingAnalysis.dateiname).replace(/\.pdf$/i, '');
+      analysis = {
+        ordner: existingAnalysis.ordner,
+        typ: existingAnalysis.typ,
+        absender: existingAnalysis.absender || '',
+        dateiname: `${base}_copy${Date.now()}`,
+      };
+    } else {
+      analysis = await aiService.analyzeDocument(ocrText);
+    }
+
+    const driveForce = forceUpload && !usedExisting;
+
     const provider = new GoogleDriveProvider(req.accessToken);
 
     let fileForUpload = primaryFile;
@@ -164,7 +230,7 @@ async function respondWithAnalysisAndStorage(
         analysis.ordner,
         analysis.dateiname,
         fileForUpload.mimetype,
-        forceUpload
+        driveForce
       );
 
       const storagePath = `${analysis.ordner}/${storageResult.fileName || `${analysis.dateiname}.pdf`}`;
@@ -174,11 +240,7 @@ async function respondWithAnalysisAndStorage(
         success: true,
         message: storageResult.duplicate ? 'Dokument bereits vorhanden' : 'Dokument erfolgreich abgelegt',
         file: buildJsonResponseFileMeta(fileForUpload),
-        analysis: {
-          ordner: analysis.ordner,
-          dateiname: analysis.dateiname,
-          typ: analysis.typ,
-        },
+        analysis: analysisResponsePayload(analysis),
         storage: {
           fileId: storageResult.fileId,
           fileName: storageResult.fileName,
@@ -192,11 +254,7 @@ async function respondWithAnalysisAndStorage(
         success: true,
         message: 'Dokument erfolgreich abgelegt',
         file: buildJsonResponseFileMeta(fileForUpload),
-        analysis: {
-          ordner: analysis.ordner,
-          dateiname: analysis.dateiname,
-          typ: analysis.typ,
-        },
+        analysis: analysisResponsePayload(analysis),
         storage: {
           error: uploadError.message || 'Upload zu Google Drive fehlgeschlagen',
         },
@@ -235,11 +293,55 @@ router.post('/upload', requireAuth, (req, res) => {
     const pageFiles = filesByField.pages;
     const docFile = filesByField.document?.[0];
     const forceUpload = req.body?.forceUpload === true || req.body?.forceUpload === 'true';
+    const existingAnalysis = parseExistingAnalysis(req.body);
+    const fastForce = Boolean(forceUpload && existingAnalysis);
 
     const hasPageFiles = Array.isArray(pageFiles) && pageFiles.length > 0;
 
     if (hasPageFiles) {
       const files = pageFiles;
+
+      if (fastForce) {
+        if (files.length > 1) {
+          try {
+            const imageBuffersForPdf = await Promise.all(
+              files.map(async (file) => {
+                const { buffer } = await bufferAndMimeForOcr(file.buffer, file.mimetype);
+                return buffer;
+              })
+            );
+            const PDFDocument = require('pdfkit');
+            const pdfBuffer = await new Promise((resolve, reject) => {
+              const doc = new PDFDocument({ autoFirstPage: false });
+              const chunks = [];
+              doc.on('data', (chunk) => chunks.push(chunk));
+              doc.on('end', () => resolve(Buffer.concat(chunks)));
+              doc.on('error', reject);
+              imageBuffersForPdf.forEach((imgBuf) => {
+                doc.addPage({ size: 'A4' });
+                doc.image(imgBuf, 0, 0, {
+                  fit: [doc.page.width, doc.page.height],
+                  align: 'center',
+                  valign: 'center',
+                });
+              });
+              doc.end();
+            });
+            const primaryFile = {
+              buffer: pdfBuffer,
+              mimetype: 'application/pdf',
+              originalname: 'document.pdf',
+              size: pdfBuffer.length,
+            };
+            return respondWithAnalysisAndStorage(req, res, primaryFile, '', true, null, null, existingAnalysis);
+          } catch (e) {
+            return res.status(500).json({
+              error: e?.message || 'PDF-Erstellung fehlgeschlagen',
+            });
+          }
+        }
+        return respondWithAnalysisAndStorage(req, res, files[0], '', true, null, null, existingAnalysis);
+      }
 
       // OCR alle Seiten
       const texts = await Promise.all(files.map((f) => ocrFileToText(f)));
@@ -290,6 +392,10 @@ router.post('/upload', requireAuth, (req, res) => {
     }
 
     if (docFile) {
+      if (fastForce) {
+        return respondWithAnalysisAndStorage(req, res, docFile, '', true, null, null, existingAnalysis);
+      }
+
       const { buffer: ocrInputBuffer, mimeType: ocrInputMime } = await bufferAndMimeForOcr(
         docFile.buffer,
         docFile.mimetype

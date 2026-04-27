@@ -284,6 +284,18 @@ function Upload() {
       }
       if (forceUpload) {
         formData.append('forceUpload', 'true');
+        const a = result?.analysis;
+        if (a && !a.error && a.ordner && a.dateiname && a.typ) {
+          formData.append(
+            'existingAnalysis',
+            JSON.stringify({
+              ordner: a.ordner,
+              dateiname: a.dateiname,
+              typ: a.typ,
+              absender: a.absender ?? '',
+            })
+          );
+        }
       }
 
       return api.post('/api/documents/upload', formData, {
