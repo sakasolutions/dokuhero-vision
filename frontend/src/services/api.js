@@ -33,14 +33,17 @@ async function performTokenRefresh() {
 }
 
 api.interceptors.request.use((config) => {
-  const existing = config.headers?.Authorization;
-  if (existing != null && String(existing).trim() !== '') {
-    return config;
+  config.headers = config.headers || {};
+  const existingAuth = config.headers.Authorization;
+  if (existingAuth == null || String(existingAuth).trim() === '') {
+    const token = localStorage.getItem('dokuhero_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
   }
-  const token = localStorage.getItem('dokuhero_token');
-  if (token) {
-    config.headers = config.headers || {};
-    config.headers.Authorization = `Bearer ${token}`;
+  const userId = localStorage.getItem('dokuhero_user_id');
+  if (userId) {
+    config.headers['x-user-id'] = userId;
   }
   return config;
 });

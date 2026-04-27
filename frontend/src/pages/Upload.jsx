@@ -395,6 +395,11 @@ function Upload() {
     const currentUrl = new URL(window.location.href);
     const tokenFromUrl = currentUrl.searchParams.get('access_token');
     const refreshTokenFromUrl = currentUrl.searchParams.get('refresh_token');
+    const userIdFromUrl = currentUrl.searchParams.get('user_id');
+
+    if (userIdFromUrl) {
+      localStorage.setItem('dokuhero_user_id', userIdFromUrl);
+    }
 
     if (tokenFromUrl || refreshTokenFromUrl) {
       if (tokenFromUrl) {
@@ -406,10 +411,14 @@ function Upload() {
       }
       currentUrl.searchParams.delete('access_token');
       currentUrl.searchParams.delete('refresh_token');
+      currentUrl.searchParams.delete('user_id');
       window.history.replaceState({}, document.title, currentUrl.toString());
       if (tokenFromUrl) {
         return;
       }
+    } else if (userIdFromUrl) {
+      currentUrl.searchParams.delete('user_id');
+      window.history.replaceState({}, document.title, currentUrl.toString());
     }
 
     const existingToken = localStorage.getItem('dokuhero_token');
@@ -468,6 +477,7 @@ function Upload() {
             onClick={() => {
               localStorage.removeItem('dokuhero_token');
               localStorage.removeItem('dokuhero_refresh_token');
+              localStorage.removeItem('dokuhero_user_id');
               localStorage.removeItem('gmail_token');
               localStorage.removeItem('gmail_refresh_token');
               window.location.href = '/';

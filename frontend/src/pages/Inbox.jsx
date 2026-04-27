@@ -174,6 +174,7 @@ export default function Inbox() {
             onClick={() => {
               localStorage.removeItem('dokuhero_token');
               localStorage.removeItem('dokuhero_refresh_token');
+              localStorage.removeItem('dokuhero_user_id');
               localStorage.removeItem(LS_GMAIL);
               localStorage.removeItem('gmail_refresh_token');
               window.location.href = '/';

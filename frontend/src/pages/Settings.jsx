@@ -256,6 +256,7 @@ export default function Settings() {
             onClick={() => {
               localStorage.removeItem('dokuhero_token');
               localStorage.removeItem('dokuhero_refresh_token');
+              localStorage.removeItem('dokuhero_user_id');
               localStorage.removeItem(LS_GMAIL);
               localStorage.removeItem(LS_GMAIL_REFRESH);
               window.location.href = '/';
