@@ -421,11 +421,54 @@ router.post('/upload', requireAuth, (req, res) => {
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const provider = new GoogleDriveProvider(req.driveToken || req.accessToken);
-    const files = await provider.listFiles('DokuHero');
-    res.json({ success: true, documents: files });
+    // Lade Dokumente aus Supabase statt Google Drive
+    const supabaseService = require('../services/supabaseService');
+
+    if (!req.userId) {
+      return res.status(401).json({ success: false, error: 'Kein User' });
+    }
+
+    const docs = await supabaseService.getUserDocuments(req.userId);
+
+    // Gruppiere nach Kategorie für Frontend
+    const folders = {};
+    for (const doc of docs) {
+      const cat = doc.category || 'Sonstiges';
+      if (!folders[cat]) {
+        folders[cat] = {
+          name: cat,
+          count: 0,
+          modifiedTime: doc.created_at,
+          webViewLink: doc.drive_web_link || null,
+          subFolders: {},
+        };
+      }
+      folders[cat].count++;
+
+      // Unterordner (Absender)
+      const sub = doc.subcategory || doc.sender;
+      if (sub) {
+        if (!folders[cat].subFolders[sub]) {
+          folders[cat].subFolders[sub] = {
+            name: sub,
+            count: 0,
+            modifiedTime: doc.created_at,
+            webViewLink: doc.drive_web_link || null,
+          };
+        }
+        folders[cat].subFolders[sub].count++;
+      }
+    }
+
+    // Konvertiere zu Array
+    const result = Object.values(folders).map((f) => ({
+      ...f,
+      subFolders: Object.values(f.subFolders),
+    }));
+
+    return res.json({ success: true, documents: result });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message || 'Dateien konnten nicht geladen werden' });
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 
