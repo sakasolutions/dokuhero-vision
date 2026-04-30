@@ -124,7 +124,10 @@ function parseExistingAnalysis(body) {
  * @param {string} [storagePath]
  */
 async function persistDocumentAndScanCount(req, primaryFile, ocrText, analysis, storageResult, storagePath) {
+  console.log('[persist] userId:', req.userId, 'fileId:', storageResult?.fileId);
+
   if (!req.userId || !storageResult?.fileId) {
+    console.error('[persist] SKIP - userId:', req.userId, 'fileId:', storageResult?.fileId);
     return;
   }
 
