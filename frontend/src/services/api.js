@@ -21,6 +21,10 @@ api.interceptors.request.use((config) => {
   if (refreshToken) {
     config.headers['x-refresh-token'] = refreshToken;
   }
+  const driveToken = localStorage.getItem('dokuhero_drive_token');
+  if (driveToken) {
+    config.headers['x-drive-token'] = driveToken;
+  }
   return config;
 });
 

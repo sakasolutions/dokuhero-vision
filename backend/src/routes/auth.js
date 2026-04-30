@@ -178,7 +178,10 @@ router.get('/drive/callback', async (req, res) => {
     }
 
     await supabaseService.updateDriveTokens(userId, tokens);
-    return res.redirect(`${frontendUrl}/settings?drive=connected`);
+    const params = new URLSearchParams();
+    params.set('drive', 'connected');
+    params.set('drive_token', tokens.access_token);
+    return res.redirect(`${frontendUrl}/settings?${params.toString()}`);
   } catch (err) {
     console.error('[auth/drive/callback]', err?.message || err);
     return res.redirect(`${frontendUrl}/settings?drive=error`);

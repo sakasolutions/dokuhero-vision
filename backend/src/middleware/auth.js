@@ -16,6 +16,7 @@ async function requireAuth(req, res, next) {
     await oauth2.userinfo.get({ auth });
     req.accessToken = token;
     req.userId = typeof req.headers['x-user-id'] === 'string' ? req.headers['x-user-id'] : null;
+    req.driveToken = typeof req.headers['x-drive-token'] === 'string' ? req.headers['x-drive-token'] : null;
     return next();
   } catch (_err) {
     const refreshToken = req.headers['x-refresh-token'];
@@ -35,6 +36,7 @@ async function requireAuth(req, res, next) {
 
       req.accessToken = credentials.access_token;
       req.userId = typeof req.headers['x-user-id'] === 'string' ? req.headers['x-user-id'] : null;
+      req.driveToken = typeof req.headers['x-drive-token'] === 'string' ? req.headers['x-drive-token'] : null;
 
       res.setHeader('x-new-token', credentials.access_token);
       if (credentials.expiry_date) {

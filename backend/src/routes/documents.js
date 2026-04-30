@@ -205,7 +205,7 @@ async function respondWithAnalysisAndStorage(
 
     const driveForce = forceUpload && !usedExisting;
 
-    const provider = new GoogleDriveProvider(req.accessToken);
+    const provider = new GoogleDriveProvider(req.driveToken || req.accessToken);
 
     let fileForUpload = primaryFile;
     if (
@@ -421,7 +421,7 @@ router.post('/upload', requireAuth, (req, res) => {
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const provider = new GoogleDriveProvider(req.accessToken);
+    const provider = new GoogleDriveProvider(req.driveToken || req.accessToken);
     const files = await provider.listFiles('DokuHero');
     res.json({ success: true, documents: files });
   } catch (error) {

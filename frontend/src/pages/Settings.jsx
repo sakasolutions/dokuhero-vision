@@ -161,6 +161,7 @@ export default function Settings() {
     const gRefresh = params.get('gmail_refresh');
     const gmailErr = params.get('gmail');
     const driveStatus = params.get('drive');
+    const driveToken = params.get('drive_token');
 
     if (gToken) {
       localStorage.setItem(LS_GMAIL, gToken);
@@ -177,6 +178,9 @@ export default function Settings() {
 
     if (driveStatus === 'connected') {
       localStorage.setItem('dokuhero_drive_connected', 'true');
+      if (driveToken) {
+        localStorage.setItem('dokuhero_drive_token', driveToken);
+      }
       setDriveConnected(true);
       setToast({ type: 'success', text: 'Google Drive erfolgreich verbunden!' });
       window.history.replaceState({}, '', `${window.location.pathname}`);
@@ -282,6 +286,7 @@ export default function Settings() {
               localStorage.removeItem('dokuhero_refresh_token');
               localStorage.removeItem('dokuhero_user_id');
               localStorage.removeItem('dokuhero_drive_connected');
+              localStorage.removeItem('dokuhero_drive_token');
               localStorage.removeItem(LS_GMAIL);
               localStorage.removeItem(LS_GMAIL_REFRESH);
               window.location.href = '/';
