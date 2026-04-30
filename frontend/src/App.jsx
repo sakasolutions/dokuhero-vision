@@ -5,6 +5,7 @@ import Documents from './pages/Documents';
 import Impressum from './pages/Impressum';
 import Inbox from './pages/Inbox';
 import Login from './pages/Login';
+import Onboarding from './pages/Onboarding';
 import Settings from './pages/Settings';
 import Upload from './pages/Upload';
 
@@ -13,6 +14,7 @@ function App() {
     <Routes>
       <Route path="/" element={<Login />} />
       <Route path="/upload" element={<Upload />} />
+      <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/documents" element={<Documents />} />
       <Route path="/inbox" element={<Inbox />} />
       <Route path="/settings" element={<Settings />} />

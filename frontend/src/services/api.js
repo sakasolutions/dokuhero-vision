@@ -4,34 +4,6 @@ const api = axios.create({
   baseURL: '',
 });
 
-/** Gemeinsames Refresh-Promise bei parallelen 401 */
-let refreshInFlight = null;
-
-function isAuthRefreshRequest(config) {
-  const url = config?.url || '';
-  return url.includes('/api/auth/refresh');
-}
-
-async function performTokenRefresh() {
-  const refreshToken = localStorage.getItem('dokuhero_refresh_token');
-  if (!refreshToken) {
-    window.location.href = '/';
-    throw new Error('No refresh token');
-  }
-
-  const refreshResponse = await axios.post('/api/auth/refresh', {
-    refresh_token: refreshToken,
-  });
-
-  const newAccessToken = refreshResponse?.data?.access_token;
-  if (!newAccessToken) {
-    throw new Error('Refresh did not return access token');
-  }
-
-  localStorage.setItem('dokuhero_token', newAccessToken);
-  return newAccessToken;
-}
-
 api.interceptors.request.use((config) => {
   config.headers = config.headers || {};
   const existingAuth = config.headers.Authorization;
@@ -45,44 +17,35 @@ api.interceptors.request.use((config) => {
   if (userId) {
     config.headers['x-user-id'] = userId;
   }
+  const refreshToken = localStorage.getItem('dokuhero_refresh_token');
+  if (refreshToken) {
+    config.headers['x-refresh-token'] = refreshToken;
+  }
   return config;
 });
 
 api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error?.config;
-    const status = error?.response?.status;
-
-    if (status !== 401 || !originalRequest || originalRequest._retry || isAuthRefreshRequest(originalRequest)) {
-      return Promise.reject(error);
-    }
-
-    const reqUrl = String(originalRequest.url || '');
-    if (reqUrl.includes('/api/gmail/inbox')) {
-      return Promise.reject(error);
-    }
-
-    originalRequest._retry = true;
-
-    try {
-      if (!refreshInFlight) {
-        refreshInFlight = performTokenRefresh().finally(() => {
-          refreshInFlight = null;
-        });
+  (response) => {
+    const newToken = response?.headers?.['x-new-token'];
+    const newExpiry = response?.headers?.['x-new-expiry'];
+    if (newToken) {
+      localStorage.setItem('dokuhero_token', newToken);
+      if (newExpiry) {
+        localStorage.setItem('dokuhero_token_expiry', newExpiry);
       }
-      const newAccessToken = await refreshInFlight;
-
-      originalRequest.headers = originalRequest.headers || {};
-      originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-
-      return api(originalRequest);
-    } catch {
+    }
+    return response;
+  },
+  async (error) => {
+    const code = error?.response?.data?.code;
+    if (code === 'REFRESH_FAILED') {
       localStorage.removeItem('dokuhero_token');
       localStorage.removeItem('dokuhero_refresh_token');
-      window.location.href = '/';
-      return Promise.reject(error);
+      localStorage.removeItem('dokuhero_token_expiry');
+      localStorage.removeItem('dokuhero_user_id');
+      window.location.href = '/babysit';
     }
+    return Promise.reject(error);
   }
 );
 

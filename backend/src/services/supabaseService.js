@@ -124,6 +124,14 @@ async function incrementScanCount(userId) {
   return data;
 }
 
+async function updateStorageProvider(userId, provider) {
+  const { error } = await getSupabase()
+    .from('users')
+    .update({ storage_provider: provider, updated_at: new Date().toISOString() })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
 module.exports = {
   supabase,
   upsertUser,
@@ -132,4 +140,5 @@ module.exports = {
   searchDocuments,
   getUser,
   incrementScanCount,
+  updateStorageProvider,
 };

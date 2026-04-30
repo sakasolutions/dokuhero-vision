@@ -404,42 +404,61 @@ function Upload() {
   }, []);
 
   useEffect(() => {
-    const currentUrl = new URL(window.location.href);
-    const tokenFromUrl = currentUrl.searchParams.get('access_token');
-    const refreshTokenFromUrl = currentUrl.searchParams.get('refresh_token');
-    const userIdFromUrl = currentUrl.searchParams.get('user_id');
+    let cancelled = false;
 
-    if (userIdFromUrl) {
-      localStorage.setItem('dokuhero_user_id', userIdFromUrl);
-    }
+    const bootstrap = async () => {
+      const currentUrl = new URL(window.location.href);
+      const tokenFromUrl = currentUrl.searchParams.get('access_token');
+      const refreshTokenFromUrl = currentUrl.searchParams.get('refresh_token');
+      const userIdFromUrl = currentUrl.searchParams.get('user_id');
 
-    if (tokenFromUrl || refreshTokenFromUrl) {
-      if (tokenFromUrl) {
-        localStorage.setItem('dokuhero_token', tokenFromUrl);
-        setToken(tokenFromUrl);
+      if (userIdFromUrl) {
+        localStorage.setItem('dokuhero_user_id', userIdFromUrl);
       }
-      if (refreshTokenFromUrl) {
-        localStorage.setItem('dokuhero_refresh_token', refreshTokenFromUrl);
+
+      if (tokenFromUrl || refreshTokenFromUrl || userIdFromUrl) {
+        if (tokenFromUrl) {
+          localStorage.setItem('dokuhero_token', tokenFromUrl);
+        }
+        if (refreshTokenFromUrl) {
+          localStorage.setItem('dokuhero_refresh_token', refreshTokenFromUrl);
+        }
+        currentUrl.searchParams.delete('access_token');
+        currentUrl.searchParams.delete('refresh_token');
+        currentUrl.searchParams.delete('user_id');
+        window.history.replaceState({}, document.title, currentUrl.toString());
       }
-      currentUrl.searchParams.delete('access_token');
-      currentUrl.searchParams.delete('refresh_token');
-      currentUrl.searchParams.delete('user_id');
-      window.history.replaceState({}, document.title, currentUrl.toString());
-      if (tokenFromUrl) {
+
+      const activeToken = tokenFromUrl || localStorage.getItem('dokuhero_token');
+      if (!activeToken) {
+        navigate('/');
         return;
       }
-    } else if (userIdFromUrl) {
-      currentUrl.searchParams.delete('user_id');
-      window.history.replaceState({}, document.title, currentUrl.toString());
-    }
 
-    const existingToken = localStorage.getItem('dokuhero_token');
-    if (!existingToken) {
-      navigate('/');
-      return;
-    }
+      if (!cancelled) {
+        setToken(activeToken);
+      }
 
-    setToken(existingToken);
+      try {
+        const me = await api.get('/api/user/me', {
+          headers: { Authorization: `Bearer ${activeToken}` },
+        });
+        const provider = me?.data?.user?.storage_provider || null;
+        if (provider) {
+          localStorage.setItem('dokuhero_storage_provider', provider);
+        } else {
+          navigate('/onboarding');
+        }
+      } catch {
+        // Wenn Userdaten nicht geladen werden können, im Upload bleiben.
+      }
+    };
+
+    bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
   }, [navigate]);
 
   const getStepState = (step) => {
