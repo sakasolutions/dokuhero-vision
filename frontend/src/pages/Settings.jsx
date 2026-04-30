@@ -93,6 +93,17 @@ function IconImapMail({ size = 26, color = '#6366f1' }) {
   );
 }
 
+function IconServer({ size = 26, color = '#6366f1' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="4" y="5" width="16" height="5" rx="1.5" stroke={color} strokeWidth="1.6" />
+      <rect x="4" y="14" width="16" height="5" rx="1.5" stroke={color} strokeWidth="1.6" />
+      <circle cx="8" cy="7.5" r="0.8" fill={color} />
+      <circle cx="8" cy="16.5" r="0.8" fill={color} />
+    </svg>
+  );
+}
+
 function badgeSoon() {
   return (
     <span
@@ -129,6 +140,7 @@ function sectionTitle(text) {
 export default function Settings() {
   const navigate = useNavigate();
   const [gmailConnected, setGmailConnected] = useState(false);
+  const [driveConnected, setDriveConnected] = useState(false);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -139,6 +151,7 @@ export default function Settings() {
   }, [navigate]);
 
   useEffect(() => {
+    setDriveConnected(localStorage.getItem('dokuhero_drive_connected') === 'true');
     setGmailConnected(!!localStorage.getItem(LS_GMAIL));
   }, []);
 
@@ -147,6 +160,7 @@ export default function Settings() {
     const gToken = params.get('gmail_token');
     const gRefresh = params.get('gmail_refresh');
     const gmailErr = params.get('gmail');
+    const driveStatus = params.get('drive');
 
     if (gToken) {
       localStorage.setItem(LS_GMAIL, gToken);
@@ -158,6 +172,16 @@ export default function Settings() {
       window.history.replaceState({}, '', `${window.location.pathname}`);
     } else if (gmailErr === 'error') {
       setToast({ type: 'error', text: 'Gmail konnte nicht verbunden werden.' });
+      window.history.replaceState({}, '', `${window.location.pathname}`);
+    }
+
+    if (driveStatus === 'connected') {
+      localStorage.setItem('dokuhero_drive_connected', 'true');
+      setDriveConnected(true);
+      setToast({ type: 'success', text: 'Google Drive erfolgreich verbunden!' });
+      window.history.replaceState({}, '', `${window.location.pathname}`);
+    } else if (driveStatus === 'error') {
+      setToast({ type: 'error', text: 'Google Drive konnte nicht verbunden werden.' });
       window.history.replaceState({}, '', `${window.location.pathname}`);
     }
   }, []);
@@ -257,6 +281,7 @@ export default function Settings() {
               localStorage.removeItem('dokuhero_token');
               localStorage.removeItem('dokuhero_refresh_token');
               localStorage.removeItem('dokuhero_user_id');
+              localStorage.removeItem('dokuhero_drive_connected');
               localStorage.removeItem(LS_GMAIL);
               localStorage.removeItem(LS_GMAIL_REFRESH);
               window.location.href = '/';
@@ -288,10 +313,42 @@ export default function Settings() {
             <IconGoogleDrive />
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>Google Drive</p>
-              <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>Verbunden ✓</p>
-              <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#9ca3af' }}>
-                Pflicht für die App — kann nicht getrennt werden.
-              </p>
+              {driveConnected ? (
+                <>
+                  <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>
+                    Verbunden ✓
+                  </p>
+                  <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                    Dokumente werden in deinem Google Drive abgelegt.
+                  </p>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const userId = localStorage.getItem('dokuhero_user_id');
+                    if (!userId) {
+                      setToast({ type: 'error', text: 'User-ID fehlt. Bitte neu einloggen.' });
+                      return;
+                    }
+                    window.location.href = `/api/auth/drive?user_id=${encodeURIComponent(userId)}`;
+                  }}
+                  style={{
+                    marginTop: '12px',
+                    fontFamily: 'inherit',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    color: '#6366f1',
+                    border: '1px solid #6366f1',
+                    borderRadius: '8px',
+                    padding: '8px 16px',
+                    background: '#fff',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Verbinden
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -349,6 +406,19 @@ export default function Settings() {
         </div>
 
         <div style={cardBase}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <IconServer />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>Hetzner Tresor</p>
+              <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>Aktiv ✓</p>
+              <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                Direkt aktivierbar, kein OAuth nötig.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div style={cardBase}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
               <IconOutlook />
@@ -374,11 +444,11 @@ export default function Settings() {
 
         <div style={cardBase}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-            <span style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>Google Drive</span>
+            <span style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>Hetzner Tresor</span>
             <span style={{ fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>✓ Aktiv</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-            <span style={{ fontSize: '14px', color: '#6b7280' }}>Dropbox</span>
+            <span style={{ fontSize: '14px', color: '#6b7280' }}>Google Drive</span>
             {badgeSoon()}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

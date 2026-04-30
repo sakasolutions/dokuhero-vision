@@ -132,6 +132,18 @@ async function updateStorageProvider(userId, provider) {
   if (error) throw error;
 }
 
+async function updateDriveTokens(userId, tokens) {
+  const { error } = await getSupabase()
+    .from('users')
+    .update({
+      drive_access_token: tokens?.access_token || null,
+      drive_refresh_token: tokens?.refresh_token || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
 module.exports = {
   supabase,
   upsertUser,
@@ -141,4 +153,5 @@ module.exports = {
   getUser,
   incrementScanCount,
   updateStorageProvider,
+  updateDriveTokens,
 };

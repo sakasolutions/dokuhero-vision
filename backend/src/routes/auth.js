@@ -18,11 +18,11 @@ const oauth2Client = new OAuth2Client(
 );
 
 const SCOPES = [
-  'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
 ];
 
+const DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive.file'];
 const GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 
 function resolveGmailRedirectUri() {
@@ -43,6 +43,27 @@ const oauth2GmailClient = gmailRedirectUri
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
       gmailRedirectUri
+    )
+  : null;
+
+function resolveDriveRedirectUri() {
+  if (process.env.GOOGLE_DRIVE_REDIRECT_URI) {
+    return process.env.GOOGLE_DRIVE_REDIRECT_URI;
+  }
+  const base = process.env.GOOGLE_REDIRECT_URI;
+  if (base && typeof base === 'string') {
+    return base.replace(/\/callback\/?$/i, '/drive/callback');
+  }
+  return null;
+}
+
+const driveRedirectUri = resolveDriveRedirectUri();
+
+const oauth2DriveClient = driveRedirectUri
+  ? new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      driveRedirectUri
     )
   : null;
 
@@ -107,6 +128,60 @@ router.get('/gmail/callback', async (req, res) => {
     return res.redirect(target.toString());
   } catch {
     return res.redirect(`${frontendUrl}/settings?gmail=error`);
+  }
+});
+
+router.get('/drive', (req, res) => {
+  if (!oauth2DriveClient || !driveRedirectUri) {
+    return res.status(500).json({
+      success: false,
+      error: 'Drive-OAuth nicht konfiguriert (GOOGLE_DRIVE_REDIRECT_URI oder GOOGLE_REDIRECT_URI).',
+    });
+  }
+
+  const userId = String(req.query?.user_id || '').trim();
+  if (!userId) {
+    return res.status(400).json({ success: false, error: 'user_id fehlt' });
+  }
+
+  const authUrl = oauth2DriveClient.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: DRIVE_SCOPES,
+    include_granted_scopes: true,
+    state: userId,
+  });
+
+  return res.redirect(authUrl);
+});
+
+router.get('/drive/callback', async (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+  if (!oauth2DriveClient) {
+    return res.redirect(`${frontendUrl}/settings?drive=error`);
+  }
+
+  try {
+    const { code, state } = req.query;
+    const userId = String(state || '').trim();
+
+    if (!code || !userId) {
+      return res.redirect(`${frontendUrl}/settings?drive=error`);
+    }
+
+    const { tokens } = await oauth2DriveClient.getToken(code);
+    oauth2DriveClient.setCredentials(tokens);
+
+    if (!tokens?.access_token) {
+      return res.redirect(`${frontendUrl}/settings?drive=error`);
+    }
+
+    await supabaseService.updateDriveTokens(userId, tokens);
+    return res.redirect(`${frontendUrl}/settings?drive=connected`);
+  } catch (err) {
+    console.error('[auth/drive/callback]', err?.message || err);
+    return res.redirect(`${frontendUrl}/settings?drive=error`);
   }
 });
 

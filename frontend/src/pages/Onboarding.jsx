@@ -46,6 +46,15 @@ export default function Onboarding() {
     try {
       await api.post('/api/user/storage-provider', { provider });
       localStorage.setItem('dokuhero_storage_provider', provider);
+      if (provider === 'google_drive') {
+        const userId = localStorage.getItem('dokuhero_user_id');
+        if (!userId) {
+          setError('User-ID fehlt. Bitte neu einloggen.');
+          return;
+        }
+        window.location.href = `/api/auth/drive?user_id=${encodeURIComponent(userId)}`;
+        return;
+      }
       navigate('/upload');
     } catch (e) {
       setError(e?.response?.data?.error || 'Speichern fehlgeschlagen');
