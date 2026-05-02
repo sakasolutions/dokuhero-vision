@@ -175,6 +175,12 @@ function analysisResponsePayload(analysis) {
   };
 }
 
+/** Upload nutzt Google Drive; nur bei explizitem Hetzner entfällt die Drive-Pflicht (bis S3 angebunden). */
+function userRequiresGoogleDriveForUpload(req) {
+  const p = req.storageProvider;
+  return p === 'google_drive' || p == null || p === '';
+}
+
 async function respondWithAnalysisAndStorage(
   req,
   res,
@@ -186,6 +192,13 @@ async function respondWithAnalysisAndStorage(
   existingAnalysis = null
 ) {
   try {
+    if (userRequiresGoogleDriveForUpload(req) && !req.driveToken) {
+      return res.status(401).json({
+        error: 'Google Drive nicht verbunden',
+        code: 'DRIVE_NOT_CONNECTED',
+      });
+    }
+
     const usedExisting =
       Boolean(forceUpload) &&
       existingAnalysis != null &&
@@ -208,7 +221,7 @@ async function respondWithAnalysisAndStorage(
 
     const driveForce = forceUpload && !usedExisting;
 
-    const provider = new GoogleDriveProvider(req.driveToken || req.accessToken);
+    const provider = new GoogleDriveProvider(req.driveToken);
 
     let fileForUpload = primaryFile;
     if (

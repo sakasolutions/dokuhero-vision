@@ -108,9 +108,13 @@ async function searchDocuments(userId, query) {
   return data;
 }
 
-// User laden
+// User laden (inkl. Drive-Tokens für serverseitiges Refresh)
 async function getUser(userId) {
-  const { data, error } = await getSupabase().from('users').select('*').eq('id', userId).single();
+  const { data, error } = await getSupabase()
+    .from('users')
+    .select('id, email, name, avatar_url, storage_provider, drive_access_token, drive_refresh_token, updated_at')
+    .eq('id', userId)
+    .single();
 
   if (error) return null;
   return data;
@@ -133,14 +137,16 @@ async function updateStorageProvider(userId, provider) {
 }
 
 async function updateDriveTokens(userId, tokens) {
-  const { error } = await getSupabase()
-    .from('users')
-    .update({
-      drive_access_token: tokens?.access_token || null,
-      drive_refresh_token: tokens?.refresh_token || null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', userId);
+  const updates = {
+    drive_access_token: tokens?.access_token ?? null,
+    updated_at: new Date().toISOString(),
+  };
+  const rt = tokens?.refresh_token;
+  if (rt != null && String(rt).trim() !== '') {
+    updates.drive_refresh_token = String(rt).trim();
+  }
+
+  const { error } = await getSupabase().from('users').update(updates).eq('id', userId);
   if (error) throw error;
 }
 
