@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import BottomNav from '../components/BottomNav';
+import api from '../services/api';
+
+const LS_STORAGE_PROVIDER = 'dokuhero_storage_provider';
 
 const LS_GMAIL = 'gmail_token';
 const LS_GMAIL_REFRESH = 'gmail_refresh_token';
@@ -141,6 +144,9 @@ export default function Settings() {
   const navigate = useNavigate();
   const [gmailConnected, setGmailConnected] = useState(false);
   const [driveConnected, setDriveConnected] = useState(false);
+  const [storageProvider, setStorageProvider] = useState(null);
+  const [meLoading, setMeLoading] = useState(true);
+  const [activatingProvider, setActivatingProvider] = useState(null);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -151,8 +157,38 @@ export default function Settings() {
   }, [navigate]);
 
   useEffect(() => {
-    setDriveConnected(localStorage.getItem('dokuhero_drive_connected') === 'true');
     setGmailConnected(!!localStorage.getItem(LS_GMAIL));
+  }, []);
+
+  async function fetchUserMe() {
+    const token = localStorage.getItem('dokuhero_token');
+    if (!token) return;
+    setMeLoading(true);
+    try {
+      const { data } = await api.get('/api/user/me');
+      if (data?.success && data.user) {
+        const sp = data.user.storage_provider || null;
+        setStorageProvider(sp);
+        const linked = !!(data.user.drive_access_token || data.user.drive_refresh_token);
+        setDriveConnected(linked);
+        if (linked) {
+          localStorage.setItem('dokuhero_drive_connected', 'true');
+        }
+        if (sp) {
+          localStorage.setItem(LS_STORAGE_PROVIDER, sp);
+        } else {
+          localStorage.removeItem(LS_STORAGE_PROVIDER);
+        }
+      }
+    } catch {
+      setToast({ type: 'error', text: 'Profil konnte nicht geladen werden.' });
+    } finally {
+      setMeLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchUserMe();
   }, []);
 
   useEffect(() => {
@@ -181,9 +217,9 @@ export default function Settings() {
       if (driveToken) {
         localStorage.setItem('dokuhero_drive_token', driveToken);
       }
-      setDriveConnected(true);
       setToast({ type: 'success', text: 'Google Drive erfolgreich verbunden!' });
       window.history.replaceState({}, '', `${window.location.pathname}`);
+      fetchUserMe();
     } else if (driveStatus === 'error') {
       setToast({ type: 'error', text: 'Google Drive konnte nicht verbunden werden.' });
       window.history.replaceState({}, '', `${window.location.pathname}`);
@@ -201,6 +237,30 @@ export default function Settings() {
     localStorage.removeItem(LS_GMAIL_REFRESH);
     setGmailConnected(false);
   };
+
+  async function activateStorageProvider(provider) {
+    setActivatingProvider(provider);
+    try {
+      await api.post('/api/user/storage-provider', { provider });
+      setStorageProvider(provider);
+      localStorage.setItem(LS_STORAGE_PROVIDER, provider);
+      setToast({ type: 'success', text: 'Speicher wurde gewechselt.' });
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Speicher konnte nicht gewechselt werden.';
+      setToast({ type: 'error', text: msg });
+    } finally {
+      setActivatingProvider(null);
+    }
+  }
+
+  function openDriveOAuth() {
+    const userId = localStorage.getItem('dokuhero_user_id');
+    if (!userId) {
+      setToast({ type: 'error', text: 'User-ID fehlt. Bitte neu einloggen.' });
+      return;
+    }
+    window.location.href = `/api/auth/drive?user_id=${encodeURIComponent(userId)}`;
+  }
 
   const cardBase = {
     background: '#fff',
@@ -287,6 +347,7 @@ export default function Settings() {
               localStorage.removeItem('dokuhero_user_id');
               localStorage.removeItem('dokuhero_drive_connected');
               localStorage.removeItem('dokuhero_drive_token');
+              localStorage.removeItem(LS_STORAGE_PROVIDER);
               localStorage.removeItem(LS_GMAIL);
               localStorage.removeItem(LS_GMAIL_REFRESH);
               window.location.href = '/';
@@ -312,51 +373,6 @@ export default function Settings() {
 
       <div style={{ maxWidth: '480px', margin: '0 auto', padding: '16px 16px 80px' }}>
         {sectionTitle('VERBUNDENE KONTEN')}
-
-        <div style={cardBase}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-            <IconGoogleDrive />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>Google Drive</p>
-              {driveConnected ? (
-                <>
-                  <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>
-                    Verbunden ✓
-                  </p>
-                  <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#9ca3af' }}>
-                    Dokumente werden in deinem Google Drive abgelegt.
-                  </p>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const userId = localStorage.getItem('dokuhero_user_id');
-                    if (!userId) {
-                      setToast({ type: 'error', text: 'User-ID fehlt. Bitte neu einloggen.' });
-                      return;
-                    }
-                    window.location.href = `/api/auth/drive?user_id=${encodeURIComponent(userId)}`;
-                  }}
-                  style={{
-                    marginTop: '12px',
-                    fontFamily: 'inherit',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    color: '#6366f1',
-                    border: '1px solid #6366f1',
-                    borderRadius: '8px',
-                    padding: '8px 16px',
-                    background: '#fff',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Verbinden
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
 
         <div style={cardBase}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
@@ -411,19 +427,6 @@ export default function Settings() {
         </div>
 
         <div style={cardBase}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-            <IconServer />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>Hetzner Tresor</p>
-              <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>Aktiv ✓</p>
-              <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#9ca3af' }}>
-                Direkt aktivierbar, kein OAuth nötig.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div style={cardBase}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
               <IconOutlook />
@@ -447,20 +450,159 @@ export default function Settings() {
 
         {sectionTitle('SPEICHER')}
 
-        <div style={cardBase}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-            <span style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>Hetzner Tresor</span>
-            <span style={{ fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>✓ Aktiv</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-            <span style={{ fontSize: '14px', color: '#6b7280' }}>Google Drive</span>
-            {badgeSoon()}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '14px', color: '#6b7280' }}>OneDrive</span>
-            {badgeSoon()}
-          </div>
-        </div>
+        <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#6b7280', lineHeight: 1.45 }}>
+          Es ist immer genau ein Speicher aktiv. Du kannst jederzeit wechseln.
+        </p>
+
+        {meLoading ? (
+          <p style={{ margin: 0, fontSize: '14px', color: '#9ca3af' }}>Lade Einstellungen…</p>
+        ) : (
+          <>
+            {/* Hetzner Tresor */}
+            <div
+              style={{
+                ...cardBase,
+                border:
+                  storageProvider === 'hetzner' ? '2px solid #6366f1' : '1px solid #e5e7eb',
+                marginBottom: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                <IconServer />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>Hetzner Tresor</p>
+                    {storageProvider === 'hetzner' ? (
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: '#15803d',
+                          background: '#dcfce7',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        Aktiv ✓
+                      </span>
+                    ) : null}
+                  </div>
+                  <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                    EU-Hosting über Object Storage — kein Google-Konto nötig.
+                  </p>
+                  {storageProvider !== 'hetzner' ? (
+                    <button
+                      type="button"
+                      disabled={activatingProvider === 'hetzner'}
+                      onClick={() => activateStorageProvider('hetzner')}
+                      style={{
+                        marginTop: '12px',
+                        fontFamily: 'inherit',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '8px 16px',
+                        background: activatingProvider === 'hetzner' ? '#a5b4fc' : '#6366f1',
+                        cursor: activatingProvider === 'hetzner' ? 'default' : 'pointer',
+                      }}
+                    >
+                      {activatingProvider === 'hetzner' ? 'Wird aktiviert…' : 'Aktivieren'}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            {/* Google Drive */}
+            <div
+              style={{
+                ...cardBase,
+                border:
+                  storageProvider === 'google_drive' ? '2px solid #6366f1' : '1px solid #e5e7eb',
+                marginBottom: '10px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                <IconGoogleDrive />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>Google Drive</p>
+                    {storageProvider === 'google_drive' ? (
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: '#15803d',
+                          background: '#dcfce7',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        Aktiv ✓
+                      </span>
+                    ) : null}
+                  </div>
+                  <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                    Dokumente in deinem Google Drive unter „DokuHero“.
+                  </p>
+                  {storageProvider !== 'google_drive' ? (
+                    driveConnected ? (
+                      <button
+                        type="button"
+                        disabled={activatingProvider === 'google_drive'}
+                        onClick={() => activateStorageProvider('google_drive')}
+                        style={{
+                          marginTop: '12px',
+                          fontFamily: 'inherit',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '8px 16px',
+                          background: activatingProvider === 'google_drive' ? '#a5b4fc' : '#6366f1',
+                          cursor: activatingProvider === 'google_drive' ? 'default' : 'pointer',
+                        }}
+                      >
+                        {activatingProvider === 'google_drive' ? 'Wird aktiviert…' : 'Aktivieren'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={openDriveOAuth}
+                        style={{
+                          marginTop: '12px',
+                          fontFamily: 'inherit',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          color: '#6366f1',
+                          border: '1px solid #6366f1',
+                          borderRadius: '8px',
+                          padding: '8px 16px',
+                          background: '#fff',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Verbinden
+                      </button>
+                    )
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ ...cardBase, marginBottom: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '14px', color: '#6b7280' }}>OneDrive</span>
+                {badgeSoon()}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <BottomNav />
