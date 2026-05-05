@@ -9,6 +9,7 @@ const ocrService = require('../services/ocrService');
 const aiService = require('../services/aiService');
 const supabaseService = require('../services/supabaseService');
 const GoogleDriveProvider = require('../services/storage/GoogleDriveProvider');
+const HetznerS3Provider = require('../services/storage/HetznerS3Provider');
 
 const router = express.Router();
 
@@ -44,6 +45,20 @@ const uploadFields = upload.fields([
   { name: 'document', maxCount: 1 },
   { name: 'pages', maxCount: 10 },
 ]);
+
+function getStorageProvider(req) {
+  const provider = req.storageProvider || 'google_drive';
+
+  if (provider === 'hetzner') {
+    return new HetznerS3Provider(req.userId);
+  }
+
+  // Google Drive (default)
+  if (!req.driveToken) {
+    throw new Error('DRIVE_NOT_CONNECTED');
+  }
+  return new GoogleDriveProvider(req.driveToken);
+}
 
 /**
  * HEIC/HEIF → JPEG für OpenAI-OCR (sharp/libvips).
@@ -132,12 +147,13 @@ async function persistDocumentAndScanCount(req, primaryFile, ocrText, analysis, 
   }
 
   try {
+    const provider = req.storageProvider || 'google_drive';
     await supabaseService.saveDocument(req.userId, {
       filename: `${analysis.dateiname}.pdf`,
       originalFilename: primaryFile.originalname,
       category: analysis.ordner,
       subcategory: analysis.absender || null,
-      provider: 'google_drive',
+      provider,
       storagePath: storagePath || null,
       driveFileId: storageResult.fileId,
       webViewLink: storageResult.webViewLink || null,
@@ -175,12 +191,6 @@ function analysisResponsePayload(analysis) {
   };
 }
 
-/** Upload nutzt Google Drive; nur bei explizitem Hetzner entfällt die Drive-Pflicht (bis S3 angebunden). */
-function userRequiresGoogleDriveForUpload(req) {
-  const p = req.storageProvider;
-  return p === 'google_drive' || p == null || p === '';
-}
-
 async function respondWithAnalysisAndStorage(
   req,
   res,
@@ -192,11 +202,17 @@ async function respondWithAnalysisAndStorage(
   existingAnalysis = null
 ) {
   try {
-    if (userRequiresGoogleDriveForUpload(req) && !req.driveToken) {
-      return res.status(401).json({
-        error: 'Google Drive nicht verbunden',
-        code: 'DRIVE_NOT_CONNECTED',
-      });
+    let provider;
+    try {
+      provider = getStorageProvider(req);
+    } catch (e) {
+      if (e?.message === 'DRIVE_NOT_CONNECTED') {
+        return res.status(401).json({
+          error: 'Google Drive nicht verbunden. Bitte in Einstellungen verbinden.',
+          code: 'DRIVE_NOT_CONNECTED',
+        });
+      }
+      throw e;
     }
 
     const usedExisting =
@@ -219,9 +235,7 @@ async function respondWithAnalysisAndStorage(
       analysis = await aiService.analyzeDocument(ocrText);
     }
 
-    const driveForce = forceUpload && !usedExisting;
-
-    const provider = new GoogleDriveProvider(req.driveToken);
+    const uploadForce = forceUpload && !usedExisting;
 
     let fileForUpload = primaryFile;
     if (
@@ -240,54 +254,41 @@ async function respondWithAnalysisAndStorage(
       };
     }
 
-    try {
-      const storageResult = await provider.uploadFile(
-        fileForUpload.buffer,
-        analysis.ordner,
-        analysis.dateiname,
-        fileForUpload.mimetype,
-        driveForce
-      );
+    const storageResult = await provider.uploadFile(
+      fileForUpload.buffer,
+      analysis.ordner,
+      analysis.dateiname,
+      fileForUpload.mimetype,
+      uploadForce
+    );
 
-      const storagePath = `${analysis.ordner}/${storageResult.fileName || `${analysis.dateiname}.pdf`}`;
-      await persistDocumentAndScanCount(req, fileForUpload, ocrText, analysis, storageResult, storagePath);
+    const storagePath =
+      req.storageProvider === 'hetzner'
+        ? storageResult.storagePath || null
+        : `${analysis.ordner}/${storageResult.fileName || `${analysis.dateiname}.pdf`}`;
+    await persistDocumentAndScanCount(req, fileForUpload, ocrText, analysis, storageResult, storagePath);
 
-      return res.json({
-        success: true,
-        message: storageResult.duplicate ? 'Dokument bereits vorhanden' : 'Dokument erfolgreich abgelegt',
-        file: buildJsonResponseFileMeta(fileForUpload),
-        analysis: analysisResponsePayload(analysis),
-        storage: {
-          fileId: storageResult.fileId,
-          fileName: storageResult.fileName,
-          webViewLink: storageResult.webViewLink,
-          duplicate: Boolean(storageResult.duplicate),
-          path: storagePath,
-        },
-      });
-    } catch (uploadError) {
-      return res.json({
-        success: true,
-        message: 'Dokument erfolgreich abgelegt',
-        file: buildJsonResponseFileMeta(fileForUpload),
-        analysis: analysisResponsePayload(analysis),
-        storage: {
-          error: uploadError.message || 'Upload zu Google Drive fehlgeschlagen',
-        },
-      });
-    }
-  } catch (analysisError) {
     return res.json({
       success: true,
-      message: 'Dokument erfolgreich abgelegt',
-      file: buildJsonResponseFileMeta(primaryFile),
-      analysis: {
-        error: analysisError.message || 'Analyse fehlgeschlagen',
-      },
+      message: storageResult.duplicate ? 'Dokument bereits vorhanden' : 'Dokument erfolgreich abgelegt',
+      file: buildJsonResponseFileMeta(fileForUpload),
+      analysis: analysisResponsePayload(analysis),
       storage: {
-        error: 'Upload nicht ausgeführt',
+        fileId: storageResult.fileId,
+        fileName: storageResult.fileName,
+        webViewLink: storageResult.webViewLink,
+        duplicate: Boolean(storageResult.duplicate),
+        path: storagePath,
       },
     });
+  } catch (analysisError) {
+    if (analysisError?.message === 'DRIVE_NOT_CONNECTED') {
+      return res.status(401).json({
+        error: 'Google Drive nicht verbunden. Bitte in Einstellungen verbinden.',
+        code: 'DRIVE_NOT_CONNECTED',
+      });
+    }
+    return res.status(500).json({ success: false, error: analysisError?.message || 'Upload fehlgeschlagen' });
   }
 }
 
@@ -437,11 +438,24 @@ router.post('/upload', requireAuth, (req, res) => {
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    // Lade Dokumente aus Supabase statt Google Drive
-    const supabaseService = require('../services/supabaseService');
-
     if (!req.userId) {
       return res.status(401).json({ success: false, error: 'Kein User' });
+    }
+
+    const provider = req.storageProvider || 'google_drive';
+    if (provider === 'hetzner') {
+      const hetzner = new HetznerS3Provider(req.userId);
+      const files = await hetzner.listFiles();
+      const folders = (files || []).map((f) => ({
+        id: f.name,
+        name: f.name,
+        count: Number(f.count) || 0,
+        modifiedTime: f.modifiedTime || null,
+        webViewLink: null,
+        type: 'folder',
+        subFolders: [],
+      }));
+      return res.json({ success: true, documents: folders });
     }
 
     const docs = await supabaseService.getUserDocuments(req.userId);
@@ -478,6 +492,8 @@ router.get('/', requireAuth, async (req, res) => {
 
     // Konvertiere zu Array
     const result = Object.values(folders).map((f) => ({
+      id: f.name,
+      type: 'folder',
       ...f,
       subFolders: Object.values(f.subFolders),
     }));
