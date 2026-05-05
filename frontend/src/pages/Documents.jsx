@@ -84,6 +84,44 @@ function driveSubfolderSearchLink(categoryName, subName) {
 
 const HETZNER_DIRECT_SUBLABEL = '(ohne Anbieter)';
 
+async function openAuthenticatedDocumentDownload(docId) {
+  const token = localStorage.getItem('dokuhero_token');
+  const path = `/api/documents/${encodeURIComponent(docId)}/download`;
+  const res = await fetch(path, {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    redirect: 'manual',
+  });
+
+  if (res.status === 302 || res.status === 301 || res.status === 303 || res.status === 307 || res.status === 308) {
+    let loc = res.headers.get('Location');
+    if (loc && loc.startsWith('/')) {
+      loc = `${window.location.origin}${loc}`;
+    }
+    if (loc) {
+      window.open(loc, '_blank', 'noopener,noreferrer');
+      return;
+    }
+  }
+
+  if (res.ok) {
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return;
+  }
+
+  let msg = `Download fehlgeschlagen (${res.status})`;
+  try {
+    const j = await res.json();
+    if (j?.error) msg = j.error;
+  } catch {
+    /* ignore */
+  }
+  throw new Error(msg);
+}
+
 function openFolderOrExternal(navigate, folder, subRow) {
   const storageProvider = localStorage.getItem('dokuhero_storage_provider') || 'google_drive';
   if (storageProvider === 'hetzner') {
@@ -228,6 +266,26 @@ function Documents() {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const handleSearch = async (value) => {
+    setSearchQuery(value);
+    if (!value || value.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const response = await api.get(`/api/documents/search?q=${encodeURIComponent(value.trim())}`);
+      setSearchResults(response.data.documents || []);
+    } catch (_err) {
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const folderGroups = useMemo(() => normalizeFolderRows(documents), [documents]);
   const folderGroupsVisible = useMemo(
@@ -440,22 +498,122 @@ function Documents() {
               </div>
             </section>
 
-            <p
-              style={{
-                margin: '16px 0 0',
-                padding: '0 16px',
-                fontSize: '13px',
-                fontWeight: 600,
-                color: '#9ca3af',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-              }}
-            >
-              Ordner
-            </p>
+            <div style={{ padding: '0 16px', marginBottom: '8px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'white',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '12px',
+                  padding: '10px 14px',
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.35-4.35" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Dokumente durchsuchen..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  style={{
+                    border: 'none',
+                    outline: 'none',
+                    width: '100%',
+                    fontSize: '14px',
+                    color: '#111827',
+                    background: 'transparent',
+                  }}
+                />
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSearchResults([]);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: '#9ca3af',
+                      fontSize: '20px',
+                      lineHeight: 1,
+                    }}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            </div>
 
-            <div style={{ padding: '0 16px' }}>
-              {folderGroupsVisible.map((folder) => {
+            {searchQuery ? (
+              <div style={{ padding: '0 16px' }}>
+                {isSearching ? (
+                  <p style={{ color: '#9ca3af', textAlign: 'center' }}>Suche...</p>
+                ) : null}
+                {!isSearching && searchResults.length === 0 ? (
+                  <p style={{ color: '#9ca3af', textAlign: 'center' }}>
+                    Keine Dokumente gefunden für &quot;{searchQuery}&quot;
+                  </p>
+                ) : null}
+                {searchResults.map((doc) => (
+                  <div
+                    key={doc.id}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        void openAuthenticatedDocumentDownload(doc.id).catch((err) =>
+                          window.alert(err?.message || 'Download fehlgeschlagen')
+                        );
+                      }
+                    }}
+                    onClick={() =>
+                      void openAuthenticatedDocumentDownload(doc.id).catch((err) =>
+                        window.alert(err?.message || 'Download fehlgeschlagen')
+                      )
+                    }
+                    style={{
+                      background: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '12px',
+                      padding: '14px 16px',
+                      marginBottom: '8px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <p style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#111827' }}>
+                      {doc.filename?.replace(/\.pdf$/i, '')}
+                    </p>
+                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                      {doc.category} {doc.sender ? `· ${doc.sender}` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <>
+                <p
+                  style={{
+                    margin: '16px 0 0',
+                    padding: '0 16px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: '#9ca3af',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  Ordner
+                </p>
+
+                <div style={{ padding: '0 16px' }}>
+                  {folderGroupsVisible.map((folder) => {
                 const hasSubs = Array.isArray(folder.subFolders) && folder.subFolders.length > 0;
                 const folderKey = folder.id || folder.name;
 
@@ -627,8 +785,10 @@ function Documents() {
                     </div>
                   </button>
                 );
-              })}
-            </div>
+                  })}
+                </div>
+              </>
+            )}
           </>
         ) : null}
       </div>
