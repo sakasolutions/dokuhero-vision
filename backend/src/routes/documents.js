@@ -442,24 +442,6 @@ router.post('/upload', requireAuth, (req, res) => {
   });
 });
 
-router.get('/search', requireAuth, async (req, res) => {
-  try {
-    if (!req.userId) {
-      return res.status(401).json({ success: false, error: 'Kein User' });
-    }
-
-    const q = req.query.q != null ? String(req.query.q).trim() : '';
-    if (!q || q.length < 2) {
-      return res.json({ success: true, documents: [] });
-    }
-
-    const docs = await supabaseService.searchDocuments(req.userId, q);
-    return res.json({ success: true, documents: docs });
-  } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 router.get('/folder/:category/:subcategory', requireAuth, async (req, res) => {
   try {
     if (!req.userId) {
@@ -497,6 +479,20 @@ router.get('/folder/:folderName', requireAuth, async (req, res) => {
     return res.json({ success: true, documents: docs });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.get('/search', requireAuth, async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.trim().length < 2) {
+      return res.json({ success: true, documents: [] });
+    }
+
+    const results = await supabaseService.searchDocuments(req.userId, q.trim());
+    res.json({ success: true, documents: results });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
