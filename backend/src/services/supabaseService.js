@@ -117,6 +117,25 @@ async function getDocumentsByCategory(userId, category) {
   return data || [];
 }
 
+async function getDocumentsByCategoryAndSubcategory(userId, category, subcategory) {
+  const { data, error } = await getSupabase()
+    .from('documents')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('category', category)
+    .eq('subcategory', subcategory)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function deleteDocument(id, userId) {
+  const { error } = await getSupabase().from('documents').delete().eq('id', id).eq('user_id', userId);
+
+  if (error) throw error;
+}
+
 // Volltextsuche
 async function searchDocuments(userId, query) {
   const { data, error } = await getSupabase()
@@ -179,7 +198,9 @@ module.exports = {
   upsertUser,
   saveDocument,
   getDocument,
+  deleteDocument,
   getDocumentsByCategory,
+  getDocumentsByCategoryAndSubcategory,
   getUserDocuments,
   searchDocuments,
   getUser,

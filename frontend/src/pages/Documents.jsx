@@ -85,9 +85,11 @@ function driveSubfolderSearchLink(categoryName, subName) {
 function openFolderOrExternal(navigate, folder, subRow) {
   const storageProvider = localStorage.getItem('dokuhero_storage_provider') || 'google_drive';
   if (storageProvider === 'hetzner') {
-    const base = `/documents/folder/${encodeURIComponent(folder.name)}`;
-    const path = subRow?.name ? `${base}?sub=${encodeURIComponent(subRow.name)}` : base;
-    navigate(path);
+    if (subRow?.name) {
+      navigate(`/documents/folder/${encodeURIComponent(folder.name)}/${encodeURIComponent(subRow.name)}`);
+    } else {
+      navigate(`/documents/folder/${encodeURIComponent(folder.name)}`);
+    }
     return;
   }
   const url = subRow

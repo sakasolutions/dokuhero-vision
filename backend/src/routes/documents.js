@@ -442,6 +442,23 @@ router.post('/upload', requireAuth, (req, res) => {
   });
 });
 
+router.get('/folder/:category/:subcategory', requireAuth, async (req, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({ success: false, error: 'Kein User' });
+    }
+
+    const category = decodeURIComponent(req.params.category);
+    const subcategory = decodeURIComponent(req.params.subcategory);
+
+    const docs = await supabaseService.getDocumentsByCategoryAndSubcategory(req.userId, category, subcategory);
+
+    return res.json({ success: true, documents: docs });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 router.get('/folder/:folderName', requireAuth, async (req, res) => {
   try {
     if (!req.userId) {
@@ -542,6 +559,32 @@ router.get('/:id/download', requireAuth, async (req, res) => {
     return res.status(404).json({ error: 'Kein Download-Link verfügbar' });
   } catch (error) {
     return res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const doc = await supabaseService.getDocument(id, req.userId);
+    if (!doc) {
+      return res.status(404).json({ success: false, error: 'Dokument nicht gefunden' });
+    }
+
+    if (doc.provider === 'hetzner' && doc.storage_path) {
+      try {
+        const hetzner = new HetznerS3Provider(req.userId);
+        await hetzner.deleteFile(doc.storage_path);
+      } catch (err) {
+        console.error('[documents/delete] S3 delete:', err?.message || err);
+      }
+    }
+
+    await supabaseService.deleteDocument(id, req.userId);
+
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 

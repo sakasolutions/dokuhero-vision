@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import BottomNav from '../components/BottomNav';
 import api from '../services/api';
@@ -12,10 +12,25 @@ function IconChevronLeft({ size = 20, color = '#6366f1' }) {
   );
 }
 
-/**
- * Download mit Bearer: bei Drive 302 + Location; bei Hetzner streamt das Backend (200 + Body).
- */
-async function openAuthenticatedDownload(docId) {
+function filenameWithoutPdf(filename) {
+  return String(filename || '').replace(/\.pdf$/i, '').trim() || 'Dokument';
+}
+
+function formatDocDate(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleDateString('de-DE', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return '—';
+  }
+}
+
+/** Drive: 302 + Location; Hetzner: 200 + Stream — Authorization nur per fetch möglich. */
+async function openDownload(docId) {
   const token = localStorage.getItem('dokuhero_token');
   const path = `/api/documents/${encodeURIComponent(docId)}/download`;
   const res = await fetch(path, {
@@ -43,43 +58,47 @@ async function openAuthenticatedDownload(docId) {
     return;
   }
 
-  if (!res.ok) {
-    let msg = `Download fehlgeschlagen (${res.status})`;
-    try {
-      const j = await res.json();
-      if (j?.error) msg = j.error;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(msg);
+  let msg = `Download fehlgeschlagen (${res.status})`;
+  try {
+    const j = await res.json();
+    if (j?.error) msg = j.error;
+  } catch {
+    /* ignore */
   }
+  throw new Error(msg);
 }
 
-export default function DocumentsFolder() {
+export default function FolderView() {
   const navigate = useNavigate();
-  const { folderName: folderNameParam } = useParams();
-  const [searchParams] = useSearchParams();
-  const subFilter = searchParams.get('sub') || '';
-
-  const folderName = folderNameParam ? decodeURIComponent(folderNameParam) : '';
+  const { category, subcategory } = useParams();
 
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const load = useCallback(async () => {
-    if (!folderName) return;
     const token = localStorage.getItem('dokuhero_token');
     if (!token) {
       navigate('/');
       return;
     }
 
+    if (!category) {
+      setError('Ungültiger Ordner');
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
+
     try {
-      const q = subFilter ? `?sub=${encodeURIComponent(subFilter)}` : '';
-      const { data } = await api.get(`/api/documents/folder/${encodeURIComponent(folderName)}${q}`);
+      const catEnc = encodeURIComponent(category);
+      const path = subcategory
+        ? `/api/documents/folder/${catEnc}/${encodeURIComponent(subcategory)}`
+        : `/api/documents/folder/${catEnc}`;
+      const { data } = await api.get(path);
       setDocuments(data?.documents || []);
     } catch (e) {
       setError(e?.response?.data?.error || 'Ordner konnte nicht geladen werden.');
@@ -87,13 +106,28 @@ export default function DocumentsFolder() {
     } finally {
       setLoading(false);
     }
-  }, [folderName, subFilter, navigate]);
+  }, [category, subcategory, navigate]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const title = subFilter ? `${folderName} · ${subFilter}` : folderName;
+  const title = subcategory ? `${category} · ${subcategory}` : category;
+
+  const handleDelete = async (docId) => {
+    if (!window.confirm('Dokument wirklich löschen?')) {
+      return;
+    }
+    setDeletingId(docId);
+    try {
+      await api.delete(`/api/documents/${encodeURIComponent(docId)}`);
+      setDocuments((prev) => prev.filter((d) => d.id !== docId));
+    } catch (e) {
+      window.alert(e?.response?.data?.error || 'Löschen fehlgeschlagen.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <main
@@ -155,7 +189,7 @@ export default function DocumentsFolder() {
               minWidth: 0,
             }}
           >
-            {title || 'Ordner'}
+            {title}
           </h1>
         </div>
       </header>
@@ -175,22 +209,20 @@ export default function DocumentsFolder() {
           </p>
         ) : null}
 
-        {!loading && !error && documents.length > 0
-          ? documents.map((doc) => (
-              <div
-                key={doc.id}
-                style={{
-                  background: '#fff',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '12px',
-                  padding: '14px 16px',
-                  marginBottom: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                }}
-              >
+        {!loading &&
+          !error &&
+          documents.map((doc) => (
+            <div
+              key={doc.id}
+              style={{
+                background: '#fff',
+                border: '1px solid #e5e7eb',
+                borderRadius: '12px',
+                padding: '14px 16px',
+                marginBottom: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <p
                     style={{
@@ -203,39 +235,57 @@ export default function DocumentsFolder() {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {doc.filename || doc.original_filename || 'Dokument'}
+                    {filenameWithoutPdf(doc.filename || doc.original_filename)}
                   </p>
-                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#9ca3af' }}>
-                    {doc.document_type || doc.mime_type || ''}
+                  <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                    {formatDocDate(doc.created_at)}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await openAuthenticatedDownload(doc.id);
-                    } catch (e) {
-                      window.alert(e?.message || 'Download fehlgeschlagen');
-                    }
-                  }}
-                  style={{
-                    fontFamily: 'inherit',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    color: '#6366f1',
-                    border: '1px solid #6366f1',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    background: '#fff',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                  }}
-                >
-                  Öffnen →
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await openDownload(doc.id);
+                      } catch (e) {
+                        window.alert(e?.message || 'Download fehlgeschlagen');
+                      }
+                    }}
+                    style={{
+                      fontFamily: 'inherit',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: '#6366f1',
+                      border: '1px solid #6366f1',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      background: '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Öffnen →
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deletingId === doc.id}
+                    onClick={() => handleDelete(doc.id)}
+                    style={{
+                      fontFamily: 'inherit',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: '#dc2626',
+                      border: 'none',
+                      background: 'transparent',
+                      padding: '2px 0',
+                      cursor: deletingId === doc.id ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {deletingId === doc.id ? 'Löschen…' : 'Löschen'}
+                  </button>
+                </div>
               </div>
-            ))
-          : null}
+            </div>
+          ))}
       </div>
 
       <BottomNav />
