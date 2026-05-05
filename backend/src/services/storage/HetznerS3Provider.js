@@ -26,15 +26,56 @@ class HetznerS3Provider extends StorageProvider {
     });
   }
 
-  /** S3-Pfad: userId/year/category/filename */
-  _buildPath(folder, filename) {
-    const year = new Date().getFullYear();
-    return `${this.userId}/${year}/${folder}/${filename}`;
+  /** Gleiche Pfadlogik wie GoogleDriveProvider: userId/Kategorie/[Anbieter/]Dateiname.pdf */
+  _buildPath(folder, filename, force = false) {
+    const filenameParts = (filename || '').split('_').filter(Boolean);
+    const anbieter = filenameParts.length >= 3 ? filenameParts[filenameParts.length - 1] : '';
+
+    const normalizedBaseName = force ? `${filename}_${Date.now()}` : filename;
+    const targetFileName = `${normalizedBaseName}.pdf`;
+
+    if (anbieter) {
+      return `${this.userId}/${folder}/${anbieter}/${targetFileName}`;
+    }
+    return `${this.userId}/${folder}/${targetFileName}`;
   }
 
-  _normalizePdfFilename(filename) {
-    const base = String(filename || 'document').replace(/\.pdf$/i, '');
-    return `${base}.pdf`;
+  /**
+   * @param {string} key
+   * @returns {{ kategorie: string; anbieter: string | null; dateiname: string } | null}
+   */
+  _parseObjectKey(key) {
+    const parts = key.split('/');
+    const uid = parts[0];
+    if (uid !== this.userId || parts.length < 3) {
+      return null;
+    }
+
+    if (parts.length === 4 && /^\d{4}$/.test(parts[1])) {
+      return {
+        kategorie: parts[2],
+        anbieter: null,
+        dateiname: parts[3],
+      };
+    }
+
+    if (parts.length === 4) {
+      return {
+        kategorie: parts[1],
+        anbieter: parts[2],
+        dateiname: parts[3],
+      };
+    }
+
+    if (parts.length === 3) {
+      return {
+        kategorie: parts[1],
+        anbieter: null,
+        dateiname: parts[2],
+      };
+    }
+
+    return null;
   }
 
   _isNotFound(err) {
@@ -42,8 +83,8 @@ class HetznerS3Provider extends StorageProvider {
   }
 
   async uploadFile(fileBuffer, folder, filename, mimeType, force = false) {
-    const fullFilename = this._normalizePdfFilename(filename);
-    const path = this._buildPath(folder, fullFilename);
+    const path = this._buildPath(folder, filename, force);
+    const fileName = path.split('/').pop() || `${filename}.pdf`;
 
     if (!force) {
       try {
@@ -60,7 +101,7 @@ class HetznerS3Provider extends StorageProvider {
         );
         return {
           fileId: path,
-          fileName: fullFilename,
+          fileName,
           webViewLink: signedUrl,
           storagePath: path,
           duplicate: true,
@@ -94,7 +135,7 @@ class HetznerS3Provider extends StorageProvider {
 
     return {
       fileId: path,
-      fileName: fullFilename,
+      fileName,
       webViewLink: signedUrl,
       storagePath: path,
       duplicate: false,
@@ -122,35 +163,95 @@ class HetznerS3Provider extends StorageProvider {
       continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
     } while (continuationToken);
 
-    const folders = {};
+    /** @type {Record<string, { name: string; modifiedTime: Date | null; subFolders: Record<string, { name: string; files: unknown[]; modifiedTime: Date | null }>; directFiles: unknown[]; directModified: Date | null }>} */
+    const categories = {};
 
     for (const obj of objects) {
       if (!obj.Key) continue;
-      const parts = obj.Key.split('/');
-      if (parts.length >= 4) {
-        const category = parts[2];
-        if (!folders[category]) {
-          folders[category] = {
-            name: category,
-            count: 0,
-            modifiedTime: obj.LastModified,
+      const parsed = this._parseObjectKey(obj.Key);
+      if (!parsed) continue;
+
+      const { kategorie, anbieter, dateiname } = parsed;
+
+      if (!categories[kategorie]) {
+        categories[kategorie] = {
+          name: kategorie,
+          modifiedTime: obj.LastModified || null,
+          subFolders: {},
+          directFiles: [],
+          directModified: null,
+        };
+      }
+      const cat = categories[kategorie];
+
+      const touchCatTime = () => {
+        if (obj.LastModified && (!cat.modifiedTime || obj.LastModified > cat.modifiedTime)) {
+          cat.modifiedTime = obj.LastModified;
+        }
+      };
+
+      const fileMeta = {
+        id: obj.Key,
+        name: dateiname,
+        size: obj.Size,
+        modifiedTime: obj.LastModified,
+      };
+
+      if (anbieter) {
+        if (!cat.subFolders[anbieter]) {
+          cat.subFolders[anbieter] = {
+            name: anbieter,
             files: [],
+            modifiedTime: obj.LastModified || null,
           };
         }
-        folders[category].count += 1;
-        if (obj.LastModified && folders[category].modifiedTime && obj.LastModified > folders[category].modifiedTime) {
-          folders[category].modifiedTime = obj.LastModified;
+        const sub = cat.subFolders[anbieter];
+        sub.files.push(fileMeta);
+        if (obj.LastModified && (!sub.modifiedTime || obj.LastModified > sub.modifiedTime)) {
+          sub.modifiedTime = obj.LastModified;
         }
-        folders[category].files.push({
-          id: obj.Key,
-          name: parts[parts.length - 1],
-          size: obj.Size,
-          modifiedTime: obj.LastModified,
-        });
+      } else {
+        cat.directFiles.push(fileMeta);
+        if (obj.LastModified && (!cat.directModified || obj.LastModified > cat.directModified)) {
+          cat.directModified = obj.LastModified;
+        }
       }
+      touchCatTime();
     }
 
-    return Object.values(folders);
+    const DIRECT_LABEL = '(ohne Anbieter)';
+
+    return Object.values(categories)
+      .map((cat) => {
+        /** @type {Array<{ name: string; count: number; modifiedTime: Date | null; files: unknown[] }>} */
+        const subFolders = Object.values(cat.subFolders).map((sub) => ({
+          name: sub.name,
+          count: sub.files.length,
+          modifiedTime: sub.modifiedTime,
+          files: sub.files,
+        }));
+
+        if (cat.directFiles.length > 0) {
+          subFolders.push({
+            name: DIRECT_LABEL,
+            count: cat.directFiles.length,
+            modifiedTime: cat.directModified,
+            files: cat.directFiles,
+          });
+        }
+
+        subFolders.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { sensitivity: 'base' }));
+
+        const count = subFolders.reduce((sum, s) => sum + (Number(s.count) || 0), 0);
+
+        return {
+          name: cat.name,
+          count,
+          modifiedTime: cat.modifiedTime,
+          subFolders,
+        };
+      })
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { sensitivity: 'base' }));
   }
 
   async getSignedDownloadUrl(storagePath, expiresIn = 3600) {

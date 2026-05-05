@@ -605,7 +605,13 @@ router.get('/', requireAuth, async (req, res) => {
         modifiedTime: f.modifiedTime || null,
         webViewLink: null,
         type: 'folder',
-        subFolders: [],
+        subFolders: (f.subFolders || []).map((s) => ({
+          id: s.name,
+          name: s.name,
+          count: Number(s.count) || 0,
+          modifiedTime: s.modifiedTime || null,
+          webViewLink: null,
+        })),
       }));
       return res.json({ success: true, documents: folders });
     }

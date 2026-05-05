@@ -82,10 +82,12 @@ function driveSubfolderSearchLink(categoryName, subName) {
   return `https://drive.google.com/drive/search?q=${encodeURIComponent(q)}`;
 }
 
+const HETZNER_DIRECT_SUBLABEL = '(ohne Anbieter)';
+
 function openFolderOrExternal(navigate, folder, subRow) {
   const storageProvider = localStorage.getItem('dokuhero_storage_provider') || 'google_drive';
   if (storageProvider === 'hetzner') {
-    if (subRow?.name) {
+    if (subRow?.name && subRow.name !== HETZNER_DIRECT_SUBLABEL) {
       navigate(`/documents/folder/${encodeURIComponent(folder.name)}/${encodeURIComponent(subRow.name)}`);
     } else {
       navigate(`/documents/folder/${encodeURIComponent(folder.name)}`);
