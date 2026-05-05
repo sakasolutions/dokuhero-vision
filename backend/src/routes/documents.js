@@ -605,31 +605,9 @@ router.get('/', requireAuth, async (req, res) => {
       return res.status(401).json({ success: false, error: 'Kein User' });
     }
 
-    const provider = req.storageProvider || 'google_drive';
-    if (provider === 'hetzner') {
-      const hetzner = new HetznerS3Provider(req.userId);
-      const files = await hetzner.listFiles();
-      const folders = (files || []).map((f) => ({
-        id: f.name,
-        name: f.name,
-        count: Number(f.count) || 0,
-        modifiedTime: f.modifiedTime || null,
-        webViewLink: null,
-        type: 'folder',
-        subFolders: (f.subFolders || []).map((s) => ({
-          id: s.name,
-          name: s.name,
-          count: Number(s.count) || 0,
-          modifiedTime: s.modifiedTime || null,
-          webViewLink: null,
-        })),
-      }));
-      return res.json({ success: true, documents: folders });
-    }
-
+    // Immer aus Supabase — Zähler für Kategorie/Unterordner = echte Zeilen in `documents`
     const docs = await supabaseService.getUserDocuments(req.userId);
 
-    // Gruppiere nach Kategorie für Frontend
     const folders = {};
     for (const doc of docs) {
       const cat = doc.category || 'Sonstiges';
@@ -642,30 +620,45 @@ router.get('/', requireAuth, async (req, res) => {
           subFolders: {},
         };
       }
-      folders[cat].count++;
+      const bucket = folders[cat];
+      bucket.count++;
 
-      // Unterordner (Absender)
+      const docTime = doc.created_at;
+      if (docTime && (!bucket.modifiedTime || new Date(docTime) > new Date(bucket.modifiedTime))) {
+        bucket.modifiedTime = docTime;
+      }
+
       const sub = doc.subcategory || doc.sender;
       if (sub) {
-        if (!folders[cat].subFolders[sub]) {
-          folders[cat].subFolders[sub] = {
-            name: sub,
-            count: 0,
-            modifiedTime: doc.created_at,
-            webViewLink: doc.drive_web_link || null,
-          };
+        const subKey = String(sub).trim();
+        if (subKey) {
+          if (!bucket.subFolders[subKey]) {
+            bucket.subFolders[subKey] = {
+              name: subKey,
+              count: 0,
+              modifiedTime: doc.created_at,
+              webViewLink: doc.drive_web_link || null,
+            };
+          }
+          const subBucket = bucket.subFolders[subKey];
+          subBucket.count++;
+          if (docTime && (!subBucket.modifiedTime || new Date(docTime) > new Date(subBucket.modifiedTime))) {
+            subBucket.modifiedTime = docTime;
+          }
         }
-        folders[cat].subFolders[sub].count++;
       }
     }
 
-    // Konvertiere zu Array
-    const result = Object.values(folders).map((f) => ({
-      id: f.name,
-      type: 'folder',
-      ...f,
-      subFolders: Object.values(f.subFolders),
-    }));
+    const result = Object.values(folders)
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'de', { sensitivity: 'base' }))
+      .map((f) => ({
+        id: f.name,
+        type: 'folder',
+        ...f,
+        subFolders: Object.values(f.subFolders).sort((a, b) =>
+          String(a.name || '').localeCompare(String(b.name || ''), 'de', { sensitivity: 'base' })
+        ),
+      }));
 
     return res.json({ success: true, documents: result });
   } catch (error) {
