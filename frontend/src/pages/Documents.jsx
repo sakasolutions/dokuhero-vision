@@ -288,17 +288,14 @@ function Documents() {
   };
 
   const folderGroups = useMemo(() => normalizeFolderRows(documents), [documents]);
-  const folderGroupsVisible = useMemo(() => {
-    return folderGroups
-      .map((folder) => ({
-        ...folder,
-        subFolders: (folder.subFolders || []).filter((sub) => Number(sub.count) > 0),
-      }))
-      .filter(
+  const folderGroupsVisible = useMemo(
+    () =>
+      folderGroups.filter(
         (folder) =>
-          Number(folder.count) > 0 || (Array.isArray(folder.subFolders) && folder.subFolders.length > 0)
-      );
-  }, [folderGroups]);
+          Number(folder.count) > 0 || (folder.subFolders || []).some((sub) => Number(sub.count) > 0)
+      ),
+    [folderGroups]
+  );
   const totalFiles = useMemo(() => totalFileCountFromFolders(folderGroups), [folderGroups]);
   const newestIso = useMemo(() => newestFolderModifiedIso(folderGroupsVisible), [folderGroupsVisible]);
 
@@ -618,177 +615,183 @@ function Documents() {
 
                 <div style={{ padding: '0 16px' }}>
                   {folderGroupsVisible.map((folder) => {
-                const hasSubs = Array.isArray(folder.subFolders) && folder.subFolders.length > 0;
-                const folderKey = folder.id || folder.name;
+                    const subsVisible = (folder.subFolders || []).filter((sub) => Number(sub.count) > 0);
+                    const hasSubs = subsVisible.length > 0;
+                    const folderKey = folder.id || folder.name;
 
-                if (hasSubs) {
-                  return (
-                    <div key={folderKey} style={{ marginBottom: '14px' }}>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          padding: '8px 0 6px',
-                          marginBottom: '6px',
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '8px',
-                            background: '#eef2ff',
-                            display: 'grid',
-                            placeItems: 'center',
-                            flexShrink: 0,
-                          }}
-                        >
-                          <IconFolderCard size={18} />
-                        </div>
-                        <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>
-                          {folder.name} ({folder.count})
-                        </p>
-                      </div>
-                      <div style={{ marginLeft: '20px' }}>
-                        {folder.subFolders.map((sub) => (
-                          <button
-                            key={sub.id || sub.name}
-                            type="button"
-                            onClick={() => openFolderOrExternal(navigate, folder, sub)}
+                    if (hasSubs) {
+                      return (
+                        <div key={folderKey} style={{ marginBottom: '14px' }}>
+                          <div
                             style={{
                               display: 'flex',
                               alignItems: 'center',
                               gap: '10px',
-                              width: '100%',
-                              margin: '0 0 6px',
-                              padding: '10px 12px',
-                              background: '#fff',
-                              border: '1px solid #e5e7eb',
-                              borderRadius: '10px',
-                              cursor: 'pointer',
-                              textAlign: 'left',
-                              fontFamily: 'inherit',
-                              boxSizing: 'border-box',
+                              padding: '8px 0 6px',
+                              marginBottom: '6px',
                             }}
                           >
                             <div
                               style={{
-                                width: '28px',
-                                height: '28px',
-                                borderRadius: '6px',
-                                background: '#f5f5ff',
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '8px',
+                                background: '#eef2ff',
                                 display: 'grid',
                                 placeItems: 'center',
                                 flexShrink: 0,
                               }}
                             >
-                              <IconFolderCard size={16} />
+                              <IconFolderCard size={18} />
                             </div>
-                            <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                              <p
+                            <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>
+                              {folder.name} ({folder.count})
+                            </p>
+                          </div>
+                          <div style={{ marginLeft: '20px' }}>
+                            {subsVisible.map((sub) => (
+                              <button
+                                key={sub.id || sub.name}
+                                type="button"
+                                onClick={() => openFolderOrExternal(navigate, folder, sub)}
                                 style={{
-                                  margin: 0,
-                                  fontSize: '14px',
-                                  fontWeight: 600,
-                                  color: '#111827',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                  maxWidth: '160px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '10px',
+                                  width: '100%',
+                                  margin: '0 0 6px',
+                                  padding: '10px 12px',
+                                  background: '#fff',
+                                  border: '1px solid #e5e7eb',
+                                  borderRadius: '10px',
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                  fontFamily: 'inherit',
+                                  boxSizing: 'border-box',
                                 }}
                               >
-                                {sub.name} ({sub.count})
-                              </p>
-                              <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#9ca3af' }}>
-                                Zuletzt geändert: {formatZuletztGeaendertKurz(sub.modifiedTime)}
-                              </p>
-                            </div>
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                flexShrink: 0,
-                              }}
-                            >
-                              <span style={{ fontSize: '11px', color: '#6366f1', fontWeight: 600 }}>Öffnen →</span>
-                              <IconChevronRight size={14} color="#6366f1" />
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                }
+                                <div
+                                  style={{
+                                    width: '28px',
+                                    height: '28px',
+                                    borderRadius: '6px',
+                                    background: '#f5f5ff',
+                                    display: 'grid',
+                                    placeItems: 'center',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <IconFolderCard size={16} />
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                                  <p
+                                    style={{
+                                      margin: 0,
+                                      fontSize: '14px',
+                                      fontWeight: 600,
+                                      color: '#111827',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                      maxWidth: '160px',
+                                    }}
+                                  >
+                                    {sub.name} ({sub.count})
+                                  </p>
+                                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#9ca3af' }}>
+                                    Zuletzt geändert: {formatZuletztGeaendertKurz(sub.modifiedTime)}
+                                  </p>
+                                </div>
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <span style={{ fontSize: '11px', color: '#6366f1', fontWeight: 600 }}>
+                                    Öffnen →
+                                  </span>
+                                  <IconChevronRight size={14} color="#6366f1" />
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
 
-                return (
-                  <button
-                    key={folderKey}
-                    type="button"
-                    onClick={() => openFolderOrExternal(navigate, folder, null)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      margin: '0 0 8px',
-                      padding: '14px 16px',
-                      background: '#fff',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '12px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      fontFamily: 'inherit',
-                      width: '100%',
-                      boxSizing: 'border-box',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '36px',
-                        height: '36px',
-                        borderRadius: '8px',
-                        background: '#eef2ff',
-                        display: 'grid',
-                        placeItems: 'center',
-                        padding: '8px',
-                        flexShrink: 0,
-                        boxSizing: 'border-box',
-                      }}
-                    >
-                      <IconFolderCard />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                      <p
+                    return (
+                      <button
+                        key={folderKey}
+                        type="button"
+                        onClick={() => openFolderOrExternal(navigate, folder, null)}
                         style={{
-                          margin: 0,
-                          fontSize: '15px',
-                          fontWeight: 600,
-                          color: '#111827',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          margin: '0 0 8px',
+                          padding: '14px 16px',
+                          background: '#fff',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '12px',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          fontFamily: 'inherit',
+                          width: '100%',
+                          boxSizing: 'border-box',
                         }}
                       >
-                        {folder.name}
-                      </p>
-                      <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#9ca3af' }}>
-                        {folder.count} Dokumente · Zuletzt geändert: {formatZuletztGeaendertKurz(folder.modifiedTime)}
-                      </p>
-                    </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <span style={{ fontSize: '12px', color: '#6366f1', fontWeight: 500 }}>Öffnen →</span>
-                      <IconChevronRight color="#6366f1" />
-                    </div>
-                  </button>
-                );
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '8px',
+                            background: '#eef2ff',
+                            display: 'grid',
+                            placeItems: 'center',
+                            padding: '8px',
+                            flexShrink: 0,
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          <IconFolderCard />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                          <p
+                            style={{
+                              margin: 0,
+                              fontSize: '15px',
+                              fontWeight: 600,
+                              color: '#111827',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {folder.name}
+                          </p>
+                          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                            {folder.count} Dokumente · Zuletzt geändert:{' '}
+                            {formatZuletztGeaendertKurz(folder.modifiedTime)}
+                          </p>
+                        </div>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <span style={{ fontSize: '12px', color: '#6366f1', fontWeight: 500 }}>
+                            Öffnen →
+                          </span>
+                          <IconChevronRight color="#6366f1" />
+                        </div>
+                      </button>
+                    );
                   })}
                 </div>
               </>
