@@ -288,13 +288,17 @@ function Documents() {
   };
 
   const folderGroups = useMemo(() => normalizeFolderRows(documents), [documents]);
-  const folderGroupsVisible = useMemo(
-    () =>
-      folderGroups.filter(
-        (folder) => Number(folder.count) > 0 || (Array.isArray(folder.subFolders) && folder.subFolders.length > 0)
-      ),
-    [folderGroups]
-  );
+  const folderGroupsVisible = useMemo(() => {
+    return folderGroups
+      .map((folder) => ({
+        ...folder,
+        subFolders: (folder.subFolders || []).filter((sub) => Number(sub.count) > 0),
+      }))
+      .filter(
+        (folder) =>
+          Number(folder.count) > 0 || (Array.isArray(folder.subFolders) && folder.subFolders.length > 0)
+      );
+  }, [folderGroups]);
   const totalFiles = useMemo(() => totalFileCountFromFolders(folderGroups), [folderGroups]);
   const newestIso = useMemo(() => newestFolderModifiedIso(folderGroupsVisible), [folderGroupsVisible]);
 

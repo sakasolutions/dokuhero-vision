@@ -578,27 +578,24 @@ router.get('/:id/download', requireAuth, async (req, res) => {
 
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    const supabaseSvc = require('../services/supabaseService');
+    const doc = await supabaseSvc.getDocument(req.params.id, req.userId);
 
-    const doc = await supabaseService.getDocument(id, req.userId);
     if (!doc) {
-      return res.status(404).json({ success: false, error: 'Dokument nicht gefunden' });
+      return res.status(404).json({ error: 'Nicht gefunden' });
     }
 
     if (doc.provider === 'hetzner' && doc.storage_path) {
-      try {
-        const hetzner = new HetznerS3Provider(req.userId);
-        await hetzner.deleteFile(doc.storage_path);
-      } catch (err) {
-        console.error('[documents/delete] S3 delete:', err?.message || err);
-      }
+      const HetznerS3 = require('../services/storage/HetznerS3Provider');
+      const hetzner = new HetznerS3(req.userId);
+      await hetzner.deleteFile(doc.storage_path);
     }
 
-    await supabaseService.deleteDocument(id, req.userId);
+    await supabaseSvc.deleteDocument(req.params.id, req.userId);
 
-    return res.json({ success: true });
+    res.json({ success: true });
   } catch (error) {
-    return res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

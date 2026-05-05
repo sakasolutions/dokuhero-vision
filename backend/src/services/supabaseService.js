@@ -131,7 +131,7 @@ async function getDocumentsByCategoryAndSubcategory(userId, category, subcategor
 }
 
 async function deleteDocument(id, userId) {
-  const { error } = await getSupabase().from('documents').delete().eq('id', id).eq('user_id', userId);
+  const { error } = await supabase.from('documents').delete().eq('id', id).eq('user_id', userId);
 
   if (error) throw error;
 }
