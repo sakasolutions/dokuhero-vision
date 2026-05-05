@@ -82,6 +82,20 @@ function driveSubfolderSearchLink(categoryName, subName) {
   return `https://drive.google.com/drive/search?q=${encodeURIComponent(q)}`;
 }
 
+function openFolderOrExternal(navigate, folder, subRow) {
+  const storageProvider = localStorage.getItem('dokuhero_storage_provider') || 'google_drive';
+  if (storageProvider === 'hetzner') {
+    const base = `/documents/folder/${encodeURIComponent(folder.name)}`;
+    const path = subRow?.name ? `${base}?sub=${encodeURIComponent(subRow.name)}` : base;
+    navigate(path);
+    return;
+  }
+  const url = subRow
+    ? subRow.webViewLink || driveSubfolderSearchLink(folder.name, subRow.name)
+    : folder.webViewLink || driveSearchLink(folder.name);
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 function formatZuletztGeaendertKurz(iso) {
   if (!iso) return '—';
   try {
@@ -473,15 +487,9 @@ function Documents() {
                       <div style={{ marginLeft: '20px' }}>
                         {folder.subFolders.map((sub) => (
                           <button
-                            key={sub.id}
+                            key={sub.id || sub.name}
                             type="button"
-                            onClick={() =>
-                              window.open(
-                                sub.webViewLink || driveSubfolderSearchLink(folder.name, sub.name),
-                                '_blank',
-                                'noopener,noreferrer'
-                              )
-                            }
+                            onClick={() => openFolderOrExternal(navigate, folder, sub)}
                             style={{
                               display: 'flex',
                               alignItems: 'center',
@@ -538,9 +546,7 @@ function Documents() {
                                 flexShrink: 0,
                               }}
                             >
-                              <span style={{ fontSize: '11px', color: '#6366f1', fontWeight: 600 }}>
-                                In Drive öffnen
-                              </span>
+                              <span style={{ fontSize: '11px', color: '#6366f1', fontWeight: 600 }}>Öffnen →</span>
                               <IconChevronRight size={14} color="#6366f1" />
                             </div>
                           </button>
@@ -554,9 +560,7 @@ function Documents() {
                   <button
                     key={folderKey}
                     type="button"
-                    onClick={() =>
-                      window.open(folder.webViewLink || driveSearchLink(folder.name), '_blank', 'noopener,noreferrer')
-                    }
+                    onClick={() => openFolderOrExternal(navigate, folder, null)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -614,7 +618,7 @@ function Documents() {
                         flexShrink: 0,
                       }}
                     >
-                      <span style={{ fontSize: '12px', color: '#6366f1', fontWeight: 500 }}>In Drive öffnen</span>
+                      <span style={{ fontSize: '12px', color: '#6366f1', fontWeight: 500 }}>Öffnen →</span>
                       <IconChevronRight color="#6366f1" />
                     </div>
                   </button>

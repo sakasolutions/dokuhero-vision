@@ -436,6 +436,58 @@ router.post('/upload', requireAuth, (req, res) => {
   });
 });
 
+router.get('/folder/:folderName', requireAuth, async (req, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({ success: false, error: 'Kein User' });
+    }
+
+    const folderName = decodeURIComponent(req.params.folderName);
+    const subRaw = req.query.sub != null ? String(req.query.sub).trim() : '';
+
+    let docs = await supabaseService.getDocumentsByCategory(req.userId, folderName);
+    if (subRaw) {
+      docs = docs.filter((d) => {
+        const sub = d.subcategory || d.sender || '';
+        return String(sub).trim() === subRaw;
+      });
+    }
+
+    return res.json({ success: true, documents: docs });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.get('/:id/download', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const doc = await supabaseService.getDocument(id, req.userId);
+
+    if (!doc) {
+      return res.status(404).json({ error: 'Dokument nicht gefunden' });
+    }
+
+    if (doc.provider === 'hetzner') {
+      if (!doc.storage_path) {
+        return res.status(404).json({ error: 'Kein Download-Link verfügbar' });
+      }
+      const hetzner = new HetznerS3Provider(req.userId);
+      const signedUrl = await hetzner.getSignedDownloadUrl(doc.storage_path, 3600);
+      return res.redirect(signedUrl);
+    }
+
+    if (doc.provider === 'google_drive' && doc.drive_web_link) {
+      return res.redirect(doc.drive_web_link);
+    }
+
+    return res.status(404).json({ error: 'Kein Download-Link verfügbar' });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/', requireAuth, async (req, res) => {
   try {
     if (!req.userId) {

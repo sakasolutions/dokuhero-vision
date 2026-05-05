@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom';
 
 import Datenschutz from './pages/Datenschutz';
 import Documents from './pages/Documents';
+import DocumentsFolder from './pages/DocumentsFolder';
 import Impressum from './pages/Impressum';
 import Inbox from './pages/Inbox';
 import Login from './pages/Login';
@@ -15,6 +16,7 @@ function App() {
       <Route path="/" element={<Login />} />
       <Route path="/upload" element={<Upload />} />
       <Route path="/onboarding" element={<Onboarding />} />
+      <Route path="/documents/folder/:folderName" element={<DocumentsFolder />} />
       <Route path="/documents" element={<Documents />} />
       <Route path="/inbox" element={<Inbox />} />
       <Route path="/settings" element={<Settings />} />

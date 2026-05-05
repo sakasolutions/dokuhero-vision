@@ -93,6 +93,30 @@ async function getUserDocuments(userId) {
   return data;
 }
 
+async function getDocument(id, userId) {
+  const { data, error } = await getSupabase()
+    .from('documents')
+    .select('*')
+    .eq('id', id)
+    .eq('user_id', userId)
+    .single();
+
+  if (error) return null;
+  return data;
+}
+
+async function getDocumentsByCategory(userId, category) {
+  const { data, error } = await getSupabase()
+    .from('documents')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('category', category)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
 // Volltextsuche
 async function searchDocuments(userId, query) {
   const { data, error } = await getSupabase()
@@ -154,6 +178,8 @@ module.exports = {
   supabase,
   upsertUser,
   saveDocument,
+  getDocument,
+  getDocumentsByCategory,
   getUserDocuments,
   searchDocuments,
   getUser,
