@@ -9,6 +9,25 @@ const LS_STORAGE_PROVIDER = 'dokuhero_storage_provider';
 const LS_GMAIL = 'gmail_token';
 const LS_GMAIL_REFRESH = 'gmail_refresh_token';
 
+function getInitialSettingsToast() {
+  const params = new URLSearchParams(window.location.search);
+
+  if (params.get('drive') === 'connected') {
+    return { type: 'success', text: 'Google Drive erfolgreich verbunden!' };
+  }
+  if (params.get('drive') === 'error') {
+    return { type: 'error', text: 'Google Drive konnte nicht verbunden werden.' };
+  }
+  if (params.get('gmail_token')) {
+    return { type: 'success', text: 'Gmail erfolgreich verbunden!' };
+  }
+  if (params.get('gmail') === 'error') {
+    return { type: 'error', text: 'Gmail konnte nicht verbunden werden.' };
+  }
+
+  return null;
+}
+
 function IconLogoutDoor() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -142,12 +161,15 @@ function sectionTitle(text) {
 
 export default function Settings() {
   const navigate = useNavigate();
-  const [gmailConnected, setGmailConnected] = useState(false);
+  const [gmailConnected, setGmailConnected] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return !!localStorage.getItem(LS_GMAIL) || !!params.get('gmail_token');
+  });
   const [driveConnected, setDriveConnected] = useState(false);
   const [storageProvider, setStorageProvider] = useState(null);
   const [meLoading, setMeLoading] = useState(true);
   const [activatingProvider, setActivatingProvider] = useState(null);
-  const [toast, setToast] = useState(null);
+  const [toast, setToast] = useState(() => getInitialSettingsToast());
 
   useEffect(() => {
     const token = localStorage.getItem('dokuhero_token');
@@ -155,10 +177,6 @@ export default function Settings() {
       navigate('/');
     }
   }, [navigate]);
-
-  useEffect(() => {
-    setGmailConnected(!!localStorage.getItem(LS_GMAIL));
-  }, []);
 
   async function fetchUserMe() {
     const token = localStorage.getItem('dokuhero_token');
@@ -188,7 +206,10 @@ export default function Settings() {
   }
 
   useEffect(() => {
-    fetchUserMe();
+    const timer = window.setTimeout(() => {
+      void fetchUserMe();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -204,11 +225,8 @@ export default function Settings() {
       if (gRefresh) {
         localStorage.setItem(LS_GMAIL_REFRESH, gRefresh);
       }
-      setGmailConnected(true);
-      setToast({ type: 'success', text: 'Gmail erfolgreich verbunden!' });
       window.history.replaceState({}, '', `${window.location.pathname}`);
     } else if (gmailErr === 'error') {
-      setToast({ type: 'error', text: 'Gmail konnte nicht verbunden werden.' });
       window.history.replaceState({}, '', `${window.location.pathname}`);
     }
 
@@ -217,11 +235,11 @@ export default function Settings() {
       if (driveToken) {
         localStorage.setItem('dokuhero_drive_token', driveToken);
       }
-      setToast({ type: 'success', text: 'Google Drive erfolgreich verbunden!' });
       window.history.replaceState({}, '', `${window.location.pathname}`);
-      fetchUserMe();
+      window.setTimeout(() => {
+        void fetchUserMe();
+      }, 0);
     } else if (driveStatus === 'error') {
-      setToast({ type: 'error', text: 'Google Drive konnte nicht verbunden werden.' });
       window.history.replaceState({}, '', `${window.location.pathname}`);
     }
   }, []);
@@ -253,13 +271,19 @@ export default function Settings() {
     }
   }
 
-  function openDriveOAuth() {
-    const userId = localStorage.getItem('dokuhero_user_id');
-    if (!userId) {
-      setToast({ type: 'error', text: 'User-ID fehlt. Bitte neu einloggen.' });
-      return;
+  async function openDriveOAuth() {
+    try {
+      const response = await api.post('/api/auth/drive-url');
+      const authUrl = response?.data?.authUrl;
+      if (!authUrl) {
+        throw new Error('Drive-Verbindung konnte nicht gestartet werden.');
+      }
+      window.location.href = authUrl;
+    } catch (error) {
+      const msg =
+        error?.response?.data?.error || error?.message || 'Google Drive konnte nicht verbunden werden.';
+      setToast({ type: 'error', text: msg });
     }
-    window.location.href = `/api/auth/drive?user_id=${encodeURIComponent(userId)}`;
   }
 
   const cardBase = {
@@ -344,7 +368,6 @@ export default function Settings() {
             onClick={() => {
               localStorage.removeItem('dokuhero_token');
               localStorage.removeItem('dokuhero_refresh_token');
-              localStorage.removeItem('dokuhero_user_id');
               localStorage.removeItem('dokuhero_drive_connected');
               localStorage.removeItem('dokuhero_drive_token');
               localStorage.removeItem(LS_STORAGE_PROVIDER);

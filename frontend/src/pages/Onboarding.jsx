@@ -47,12 +47,12 @@ export default function Onboarding() {
       await api.post('/api/user/storage-provider', { provider });
       localStorage.setItem('dokuhero_storage_provider', provider);
       if (provider === 'google_drive') {
-        const userId = localStorage.getItem('dokuhero_user_id');
-        if (!userId) {
-          setError('User-ID fehlt. Bitte neu einloggen.');
-          return;
+        const response = await api.post('/api/auth/drive-url');
+        const authUrl = response?.data?.authUrl;
+        if (!authUrl) {
+          throw new Error('Drive-Verbindung konnte nicht gestartet werden.');
         }
-        window.location.href = `/api/auth/drive?user_id=${encodeURIComponent(userId)}`;
+        window.location.href = authUrl;
         return;
       }
       navigate('/upload');

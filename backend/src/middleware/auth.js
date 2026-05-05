@@ -1,6 +1,7 @@
 const { google } = require('googleapis');
 
 const supabaseService = require('../services/supabaseService');
+const { resolveGoogleIdentity } = require('../utils/userIdentity');
 
 /** Gleiche Logik wie auth-Routen: Drive-Consent nutzt oft …/drive/callback — Refresh muss dieselbe Client-Redirect-URI nutzen. */
 function resolveDriveOAuthRedirectUri() {
@@ -103,9 +104,14 @@ async function resolveDriveTokenFromSupabase(req) {
   }
 }
 
-function readUserIdFromHeader(req) {
-  const raw = req.headers['x-user-id'];
-  return typeof raw === 'string' ? raw.trim() || null : null;
+async function fetchAuthenticatedUser(accessToken) {
+  const oauth2 = google.oauth2('v2');
+  const auth = new google.auth.OAuth2();
+  auth.setCredentials({ access_token: accessToken });
+
+  const { data: user } = await oauth2.userinfo.get({ auth });
+  const { userId } = resolveGoogleIdentity(user);
+  return userId;
 }
 
 async function requireAuth(req, res, next) {
@@ -117,13 +123,8 @@ async function requireAuth(req, res, next) {
   }
 
   try {
-    const oauth2 = google.oauth2('v2');
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: token });
-
-    await oauth2.userinfo.get({ auth });
     req.accessToken = token;
-    req.userId = readUserIdFromHeader(req);
+    req.userId = await fetchAuthenticatedUser(token);
     await resolveDriveTokenFromSupabase(req);
     return next();
   } catch (_err) {
@@ -143,7 +144,7 @@ async function requireAuth(req, res, next) {
       }
 
       req.accessToken = credentials.access_token;
-      req.userId = readUserIdFromHeader(req);
+      req.userId = await fetchAuthenticatedUser(credentials.access_token);
 
       res.setHeader('x-new-token', credentials.access_token);
       if (credentials.expiry_date) {

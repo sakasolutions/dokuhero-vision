@@ -141,7 +141,10 @@ function Upload() {
   const fileInputRef = useRef(null);
   const addPageInputRef = useRef(null);
   const pagesRef = useRef(pages);
-  pagesRef.current = pages;
+
+  useEffect(() => {
+    pagesRef.current = pages;
+  }, [pages]);
 
   const revokeAllPagePreviews = (list) => {
     list.forEach((p) => {
@@ -269,8 +272,8 @@ function Upload() {
     setErrorMessage('Bitte versuche es erneut.');
     setProgressStep('step1_done');
 
-    let step2Timer = null;
-    let step3Timer = null;
+    let step2Timer;
+    let step3Timer;
 
     const uploadDocument = async (accessToken) => {
       const formData = new FormData();
@@ -410,13 +413,8 @@ function Upload() {
       const currentUrl = new URL(window.location.href);
       const tokenFromUrl = currentUrl.searchParams.get('access_token');
       const refreshTokenFromUrl = currentUrl.searchParams.get('refresh_token');
-      const userIdFromUrl = currentUrl.searchParams.get('user_id');
 
-      if (userIdFromUrl) {
-        localStorage.setItem('dokuhero_user_id', userIdFromUrl);
-      }
-
-      if (tokenFromUrl || refreshTokenFromUrl || userIdFromUrl) {
+      if (tokenFromUrl || refreshTokenFromUrl) {
         if (tokenFromUrl) {
           localStorage.setItem('dokuhero_token', tokenFromUrl);
         }
@@ -425,7 +423,6 @@ function Upload() {
         }
         currentUrl.searchParams.delete('access_token');
         currentUrl.searchParams.delete('refresh_token');
-        currentUrl.searchParams.delete('user_id');
         window.history.replaceState({}, document.title, currentUrl.toString());
       }
 
@@ -508,7 +505,6 @@ function Upload() {
             onClick={() => {
               localStorage.removeItem('dokuhero_token');
               localStorage.removeItem('dokuhero_refresh_token');
-              localStorage.removeItem('dokuhero_user_id');
               localStorage.removeItem('gmail_token');
               localStorage.removeItem('gmail_refresh_token');
               window.location.href = '/';

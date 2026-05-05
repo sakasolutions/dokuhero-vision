@@ -1,13 +1,12 @@
+const crypto = require('crypto');
 const express = require('express');
 const { google } = require('googleapis');
-const { v5: uuidv5 } = require('uuid');
 
 const supabaseService = require('../services/supabaseService');
+const requireAuth = require('../middleware/auth');
+const { resolveGoogleIdentity } = require('../utils/userIdentity');
 
 const OAuth2Client = google.auth.OAuth2;
-
-/** DNS-Namespace (RFC 4122) für deterministische User-UUID aus Google-ID */
-const GOOGLE_USER_UUID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 
 const router = express.Router();
 
@@ -66,6 +65,48 @@ const oauth2DriveClient = driveRedirectUri
       driveRedirectUri
     )
   : null;
+
+function getOAuthStateSecret() {
+  return process.env.OAUTH_STATE_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+}
+
+function signOAuthState(payload) {
+  const secret = getOAuthStateSecret();
+  if (!secret) {
+    throw new Error('OAuth state secret is not configured');
+  }
+
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+  return `${encodedPayload}.${signature}`;
+}
+
+function verifyOAuthState(state) {
+  const secret = getOAuthStateSecret();
+  if (!secret || !state || typeof state !== 'string') {
+    return null;
+  }
+
+  const [encodedPayload, providedSignature] = state.split('.');
+  if (!encodedPayload || !providedSignature) {
+    return null;
+  }
+
+  const expectedSignature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+  if (providedSignature !== expectedSignature) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+    if (!payload || payload.type !== 'drive' || !payload.userId) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
 
 router.get('/google', (_req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
@@ -131,7 +172,7 @@ router.get('/gmail/callback', async (req, res) => {
   }
 });
 
-router.get('/drive', (req, res) => {
+router.post('/drive-url', requireAuth, (req, res) => {
   if (!oauth2DriveClient || !driveRedirectUri) {
     return res.status(500).json({
       success: false,
@@ -139,20 +180,25 @@ router.get('/drive', (req, res) => {
     });
   }
 
-  const userId = String(req.query?.user_id || '').trim();
-  if (!userId) {
-    return res.status(400).json({ success: false, error: 'user_id fehlt' });
+  if (!req.userId) {
+    return res.status(401).json({ success: false, error: 'Nicht authentifiziert' });
   }
+
+  const state = signOAuthState({
+    type: 'drive',
+    userId: req.userId,
+    createdAt: Date.now(),
+  });
 
   const authUrl = oauth2DriveClient.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
     scope: DRIVE_SCOPES,
     include_granted_scopes: true,
-    state: userId,
+    state,
   });
 
-  return res.redirect(authUrl);
+  return res.json({ success: true, authUrl });
 });
 
 router.get('/drive/callback', async (req, res) => {
@@ -164,7 +210,8 @@ router.get('/drive/callback', async (req, res) => {
 
   try {
     const { code, state } = req.query;
-    const userId = String(state || '').trim();
+    const verifiedState = verifyOAuthState(state);
+    const userId = String(verifiedState?.userId || '').trim();
 
     if (!code || !userId) {
       return res.redirect(`${frontendUrl}/settings?drive=error`);
@@ -206,8 +253,7 @@ router.get('/callback', async (req, res) => {
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
     const { data: user } = await oauth2.userinfo.get();
 
-    const googleId = String(user?.sub || user?.id || user?.email || '').trim() || `anon_${Date.now()}`;
-    const userId = uuidv5(googleId, GOOGLE_USER_UUID_NAMESPACE);
+    const { userId } = resolveGoogleIdentity(user);
 
     try {
       await supabaseService.upsertUser({
@@ -225,7 +271,6 @@ router.get('/callback', async (req, res) => {
     if (tokens.refresh_token) {
       params.set('refresh_token', tokens.refresh_token);
     }
-    params.set('user_id', userId);
     const redirectUrl = `${process.env.FRONTEND_URL}/upload?${params.toString()}`;
     return res.redirect(redirectUrl);
   } catch (error) {

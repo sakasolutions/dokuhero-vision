@@ -13,17 +13,9 @@ api.interceptors.request.use((config) => {
       config.headers.Authorization = `Bearer ${token}`;
     }
   }
-  const userId = localStorage.getItem('dokuhero_user_id');
-  if (userId) {
-    config.headers['x-user-id'] = userId;
-  }
   const refreshToken = localStorage.getItem('dokuhero_refresh_token');
   if (refreshToken) {
     config.headers['x-refresh-token'] = refreshToken;
-  }
-  const driveToken = localStorage.getItem('dokuhero_drive_token');
-  if (driveToken) {
-    config.headers['x-drive-token'] = driveToken;
   }
   return config;
 });
@@ -46,8 +38,7 @@ api.interceptors.response.use(
       localStorage.removeItem('dokuhero_token');
       localStorage.removeItem('dokuhero_refresh_token');
       localStorage.removeItem('dokuhero_token_expiry');
-      localStorage.removeItem('dokuhero_user_id');
-      window.location.href = '/babysit';
+      window.location.href = '/';
     }
     return Promise.reject(error);
   }

@@ -47,9 +47,9 @@ function attachKey(messageId, attachmentId) {
 export default function Inbox() {
   const navigate = useNavigate();
   const [emails, setEmails] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !!localStorage.getItem(LS_GMAIL));
   const [error, setError] = useState('');
-  const [hasGmail, setHasGmail] = useState(false);
+  const [hasGmail] = useState(() => !!localStorage.getItem(LS_GMAIL));
   /** @type {Record<string, { status: 'loading' | 'success' | 'error'; ordner?: string; message?: string }>} */
   const [processing, setProcessing] = useState({});
 
@@ -60,14 +60,10 @@ export default function Inbox() {
       return;
     }
 
-    const gmailToken = localStorage.getItem(LS_GMAIL);
-    if (!gmailToken) {
-      setHasGmail(false);
-      setLoading(false);
+    if (!hasGmail) {
       return;
     }
-
-    setHasGmail(true);
+    const gmailToken = localStorage.getItem(LS_GMAIL);
     let cancelled = false;
 
     (async () => {
@@ -92,7 +88,7 @@ export default function Inbox() {
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [hasGmail, navigate]);
 
   const handleProcess = useCallback(async (messageId, attachmentId, filename) => {
     const gmailToken = localStorage.getItem(LS_GMAIL);
@@ -174,7 +170,6 @@ export default function Inbox() {
             onClick={() => {
               localStorage.removeItem('dokuhero_token');
               localStorage.removeItem('dokuhero_refresh_token');
-              localStorage.removeItem('dokuhero_user_id');
               localStorage.removeItem(LS_GMAIL);
               localStorage.removeItem('gmail_refresh_token');
               window.location.href = '/';
