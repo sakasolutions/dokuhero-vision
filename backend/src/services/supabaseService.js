@@ -136,19 +136,56 @@ async function deleteDocument(id, userId) {
   if (error) throw error;
 }
 
-// Volltextsuche
-async function searchDocuments(userId, query) {
-  const { data, error } = await getSupabase()
-    .from('documents')
-    .select('*')
-    .eq('user_id', userId)
-    .textSearch('ocr_text', query, {
-      type: 'websearch',
-      config: 'german',
-    });
+/** Metazeichen in LIKE-Mustern neutralisieren (`%`, `_`, `\`). */
+function escapeLikePattern(raw) {
+  return String(raw).replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
 
-  if (error) throw error;
-  return data;
+/** Wert für PostgREST-`.or()`-Filter quoten (Kommas u. ä. im Suchbegriff). */
+function quotePostgrestFilterValue(value) {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+// Volltextsuche (ocr_text) + ILIKE über mehrere Spalten, Treffer zusammenführen
+async function searchDocuments(userId, query) {
+  const q = String(query ?? '').trim();
+  if (!q) return [];
+
+  const supabase = getSupabase();
+  const likePat = `%${escapeLikePattern(q)}%`;
+  const quotedPat = quotePostgrestFilterValue(likePat);
+  const likeOr = [
+    `ocr_text.ilike.${quotedPat}`,
+    `filename.ilike.${quotedPat}`,
+    `category.ilike.${quotedPat}`,
+    `sender.ilike.${quotedPat}`,
+    `subcategory.ilike.${quotedPat}`,
+  ].join(',');
+
+  const [ftsResult, likeResult] = await Promise.all([
+    supabase
+      .from('documents')
+      .select('*')
+      .eq('user_id', userId)
+      .textSearch('ocr_text', q, {
+        type: 'websearch',
+        config: 'german',
+      }),
+    supabase.from('documents').select('*').eq('user_id', userId).or(likeOr),
+  ]);
+
+  if (ftsResult.error) throw ftsResult.error;
+  if (likeResult.error) throw likeResult.error;
+
+  const ftsRows = ftsResult.data || [];
+  const likeRows = likeResult.data || [];
+  const ftsIds = new Set(ftsRows.map((r) => r.id));
+
+  const merged = [...ftsRows];
+  for (const row of likeRows) {
+    if (!ftsIds.has(row.id)) merged.push(row);
+  }
+  return merged;
 }
 
 // User laden (inkl. Drive-Tokens für serverseitiges Refresh)
