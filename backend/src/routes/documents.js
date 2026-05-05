@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const fs = require('fs');
 const sharp = require('sharp');
 
@@ -12,6 +13,11 @@ const GoogleDriveProvider = require('../services/storage/GoogleDriveProvider');
 const HetznerS3Provider = require('../services/storage/HetznerS3Provider');
 
 const router = express.Router();
+
+function contentDispositionFilename(name) {
+  const n = String(name || 'document.pdf').replace(/[\r\n"]/g, '_').trim();
+  return n || 'document.pdf';
+}
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(['.jpeg', '.jpg', '.png', '.heic', '.heif', '.pdf']);
@@ -474,8 +480,59 @@ router.get('/:id/download', requireAuth, async (req, res) => {
         return res.status(404).json({ error: 'Kein Download-Link verfügbar' });
       }
       const hetzner = new HetznerS3Provider(req.userId);
-      const signedUrl = await hetzner.getSignedDownloadUrl(doc.storage_path, 3600);
-      return res.redirect(signedUrl);
+      const bucket = hetzner.bucket || process.env.HETZNER_S3_BUCKET;
+      if (!bucket) {
+        return res.status(500).json({ error: 'S3-Bucket nicht konfiguriert' });
+      }
+
+      const command = new GetObjectCommand({
+        Bucket: bucket,
+        Key: doc.storage_path,
+      });
+
+      let s3Response;
+      try {
+        s3Response = await hetzner.client.send(command);
+      } catch (err) {
+        const code = err?.$metadata?.httpStatusCode;
+        if (code === 404 || err?.name === 'NoSuchKey') {
+          return res.status(404).json({ error: 'Datei nicht gefunden' });
+        }
+        throw err;
+      }
+
+      const filename = contentDispositionFilename(doc.filename);
+      const contentType = doc.mime_type || s3Response.ContentType || 'application/pdf';
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+
+      if (s3Response.ContentLength != null) {
+        res.setHeader('Content-Length', String(s3Response.ContentLength));
+      }
+
+      const body = s3Response.Body;
+      if (!body || typeof body.pipe !== 'function') {
+        return res.status(500).json({ error: 'S3-Stream nicht verfügbar' });
+      }
+
+      body.on('error', (streamErr) => {
+        console.error('[documents/download] S3 stream:', streamErr?.message || streamErr);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Download fehlgeschlagen' });
+        } else {
+          res.destroy(streamErr);
+        }
+      });
+
+      res.on('close', () => {
+        if (typeof body.destroy === 'function') {
+          body.destroy();
+        }
+      });
+
+      body.pipe(res);
+      return;
     }
 
     if (doc.provider === 'google_drive' && doc.drive_web_link) {

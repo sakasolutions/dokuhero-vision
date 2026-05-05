@@ -13,8 +13,7 @@ function IconChevronLeft({ size = 20, color = '#6366f1' }) {
 }
 
 /**
- * GET /api/documents/:id/download setzt 302 — mit Bearer nur per fetch + Location auslesen,
- * sonst schickt ein neues Fenster keinen Authorization-Header.
+ * Download mit Bearer: bei Drive 302 + Location; bei Hetzner streamt das Backend (200 + Body).
  */
 async function openAuthenticatedDownload(docId) {
   const token = localStorage.getItem('dokuhero_token');
@@ -34,6 +33,14 @@ async function openAuthenticatedDownload(docId) {
       window.open(loc, '_blank', 'noopener,noreferrer');
       return;
     }
+  }
+
+  if (res.ok) {
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return;
   }
 
   if (!res.ok) {
