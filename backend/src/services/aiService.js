@@ -2,12 +2,76 @@ const OpenAI = require('openai');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+const FRIST_TYPEN = new Set(['Zahlung', 'Kündigung', 'Antwort', 'Sonstiges']);
+
+function normalizeIsoDate(val) {
+  if (val == null) return null;
+  const s = String(val).trim();
+  if (!s || /^null$/i.test(s)) return null;
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+
+/** Nur Ziffern/Punkt/Komma → normierte Zahl als String z.B. "9.99", sonst null */
+function normalizeBetragString(val) {
+  if (val == null) return null;
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    return String(val);
+  }
+  const s = String(val).trim();
+  if (!s || /^null$/i.test(s)) return null;
+  const cleaned = s.replace(/\s/g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+  if (!cleaned || cleaned === '-' || cleaned === '.') return null;
+  const n = parseFloat(cleaned);
+  if (!Number.isFinite(n)) return null;
+  return String(n);
+}
+
+function normalizeFristTyp(val) {
+  if (val == null || typeof val !== 'string') return null;
+  const t = val.trim();
+  return FRIST_TYPEN.has(t) ? t : null;
+}
+
+function coerceErinnerungEmpfohlen(raw, fristIso, fristTyp) {
+  let v = raw === true || raw === 'true';
+  if (!fristIso) return false;
+  const deadlineKinds = new Set(['Zahlung', 'Kündigung', 'Antwort', 'Sonstiges']);
+  if (!fristTyp || !deadlineKinds.has(fristTyp)) return false;
+  return v;
+}
+
+function buildAnalysisFromParsed(parsed) {
+  const datum = normalizeIsoDate(parsed.datum);
+  const frist = normalizeIsoDate(parsed.frist);
+  const frist_typ = normalizeFristTyp(parsed.frist_typ);
+  const betrag = normalizeBetragString(parsed.betrag);
+  const erinnerung_empfohlen = coerceErinnerungEmpfohlen(parsed.erinnerung_empfohlen, frist, frist_typ);
+
+  return {
+    ordner: parsed.ordner,
+    dateiname: sanitizeFilename(parsed.dateiname),
+    typ: parsed.typ,
+    absender: typeof parsed.absender === 'string' ? parsed.absender.trim() : '',
+    betrag,
+    datum,
+    frist,
+    frist_typ,
+    erinnerung_empfohlen,
+  };
+}
+
 function fallbackResult() {
   return {
     ordner: 'Sonstiges',
     dateiname: `Dokument_${Date.now()}`,
     typ: 'Unbekannt',
     absender: '',
+    betrag: null,
+    datum: null,
+    frist: null,
+    frist_typ: null,
+    erinnerung_empfohlen: false,
   };
 }
 
@@ -22,13 +86,18 @@ async function analyzeDocument(ocrText) {
       dateiname: 'Unbekanntes_Dokument',
       typ: 'Unbekannt',
       absender: '',
+      betrag: null,
+      datum: null,
+      frist: null,
+      frist_typ: null,
+      erinnerung_empfohlen: false,
     };
   }
 
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      max_tokens: 300,
+      max_tokens: 520,
       temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [
@@ -37,13 +106,27 @@ async function analyzeDocument(ocrText) {
           content: `Du bist ein Experte für deutsche Dokumente und Briefpost. 
 Analysiere den Text und klassifiziere das Dokument PRÄZISE.
 
-Antworte NUR mit diesem JSON:
+Antworte NUR mit diesem JSON (alle Schlüssel vorhanden, Strings wo angegeben):
 {
   "ordner": "Kategorie",
   "dateiname": "YYYY-MM_Typ_Absender",
   "typ": "Dokumenttyp",
-  "absender": "Firmen- oder Behördenname"
+  "absender": "Firmen- oder Behördenname",
+  "betrag": "9.99",
+  "datum": "2026-04-01",
+  "frist": "2026-06-15",
+  "frist_typ": "Zahlung",
+  "erinnerung_empfohlen": true
 }
+
+ZUSÄTZLICHE FELDER:
+- betrag: Nur die Zahl als String (Punkt als Dezimaltrenner), KEIN Währungssymbol. null wenn kein klarer Gesamtbetrag/Rechnungsbetrag erkennbar.
+- datum: Belegdatum oder Dokumentdatum im ISO-Format YYYY-MM-DD, sonst null.
+- frist: Erkannte Zahlungsfrist, Kündigungsfrist (z.B. Ende Vertragslaufzeit), Behörden-/Antwortfrist im ISO-Format YYYY-MM-DD. null wenn keine konkrete Frist erkennbar.
+- frist_typ: Genau einer von: "Zahlung", "Kündigung", "Antwort", "Sonstiges". null wenn frist null ist.
+- erinnerung_empfohlen (boolean):
+  true NUR wenn frist gesetzt ist UND es sich um eine relevante Frist handelt: Zahlungsfrist, Kündigungsfrist oder Behörden-/Antwortfrist (frist_typ passend).
+  false bei normalen Rechnungen ohne echte Frist, Kontoauszügen, rein informativen Schreiben, Werbung.
 
 ORDNER - wähle den passendsten:
 - Rechnungen (Strom, Gas, Wasser, Telefon, Internet, Einkauf, Handwerk)
@@ -102,12 +185,7 @@ WICHTIG:
       return fallbackResult();
     }
 
-    return {
-      ordner: parsed.ordner,
-      dateiname: sanitizeFilename(parsed.dateiname),
-      typ: parsed.typ,
-      absender: typeof parsed.absender === 'string' ? parsed.absender.trim() : '',
-    };
+    return buildAnalysisFromParsed(parsed);
   } catch (_error) {
     return fallbackResult();
   }

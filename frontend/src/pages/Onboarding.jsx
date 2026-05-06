@@ -36,7 +36,27 @@ export default function Onboarding() {
     const token = localStorage.getItem('dokuhero_token');
     if (!token) {
       navigate('/');
+      return;
     }
+
+    const cachedProvider = localStorage.getItem('dokuhero_storage_provider');
+    if (cachedProvider) {
+      navigate('/upload');
+      return;
+    }
+
+    api
+      .get('/api/user/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((me) => {
+        const provider = me?.data?.user?.storage_provider;
+        if (provider) {
+          localStorage.setItem('dokuhero_storage_provider', provider);
+          navigate('/upload');
+        }
+      })
+      .catch(() => {});
   }, [navigate]);
 
   const saveProvider = async (provider) => {

@@ -29,6 +29,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', require('./routes/documents'));
+app.use('/api/reminders', require('./routes/reminders'));
 app.use('/api/gmail', require('./routes/gmail'));
 app.use('/api/user', require('./routes/user'));
 

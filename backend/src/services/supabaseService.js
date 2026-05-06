@@ -230,6 +230,37 @@ async function updateDriveTokens(userId, tokens) {
   if (error) throw error;
 }
 
+async function createReminder({ user_id, document_id, due_date, title }) {
+  if (!user_id) throw new Error('Kein Benutzer');
+  if (!due_date) throw new Error('due_date erforderlich');
+
+  if (document_id) {
+    const doc = await getDocument(document_id, user_id);
+    if (!doc) throw new Error('Dokument nicht gefunden');
+  }
+
+  const { data, error } = await getSupabase()
+    .from('reminders')
+    .insert({ user_id, document_id, due_date, title })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+async function getUserReminders(userId) {
+  const { data, error } = await getSupabase()
+    .from('reminders')
+    .select('*, documents(filename, category, sender)')
+    .eq('user_id', userId)
+    .eq('sent', false)
+    .order('due_date', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
 module.exports = {
   supabase,
   upsertUser,
@@ -244,4 +275,6 @@ module.exports = {
   incrementScanCount,
   updateStorageProvider,
   updateDriveTokens,
+  createReminder,
+  getUserReminders,
 };

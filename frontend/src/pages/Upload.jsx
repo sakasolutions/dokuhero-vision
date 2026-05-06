@@ -6,6 +6,28 @@ import 'react-image-crop/dist/ReactCrop.css';
 import BottomNav from '../components/BottomNav';
 import api from '../services/api';
 
+function formatEuroDE(betrag) {
+  if (betrag == null || betrag === '') return null;
+  const n = parseFloat(String(betrag).replace(',', '.'));
+  if (Number.isNaN(n)) return null;
+  const formatted = n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `€ ${formatted}`;
+}
+
+function formatMonthYearDE(iso) {
+  if (!iso || typeof iso !== 'string') return null;
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('de-DE', { month: 'long', year: 'numeric' }).format(d);
+}
+
+function formatLongDateDE(iso) {
+  if (!iso || typeof iso !== 'string') return null;
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'long', year: 'numeric' }).format(d);
+}
+
 function Logo() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -130,6 +152,8 @@ function Upload() {
   const [result, setResult] = useState(null);
   const [errorMessage, setErrorMessage] = useState('Bitte versuche es erneut.');
   const [progressStep, setProgressStep] = useState('step1_done');
+  const [reminderUiState, setReminderUiState] = useState('prompt');
+  const [reminderError, setReminderError] = useState('');
 
   const [imgSrc, setImgSrc] = useState(null);
   const [crop, setCrop] = useState({ unit: '%', x: 10, y: 10, width: 80, height: 80 });
@@ -269,6 +293,8 @@ function Upload() {
 
     setStatus('uploading');
     setResult(null);
+    setReminderUiState('prompt');
+    setReminderError('');
     setErrorMessage('Bitte versuche es erneut.');
     setProgressStep('step1_done');
 
@@ -296,6 +322,11 @@ function Upload() {
               dateiname: a.dateiname,
               typ: a.typ,
               absender: a.absender ?? '',
+              betrag: a.betrag ?? null,
+              datum: a.datum ?? null,
+              frist: a.frist ?? null,
+              frist_typ: a.frist_typ ?? null,
+              erinnerung_empfohlen: Boolean(a.erinnerung_empfohlen),
             })
           );
         }
@@ -398,6 +429,32 @@ function Upload() {
     setStatus('idle');
     setErrorMessage('Bitte versuche es erneut.');
     setProgressStep('step1_done');
+    setReminderUiState('prompt');
+    setReminderError('');
+  };
+
+  const storageProviderLabel =
+    typeof window !== 'undefined' && localStorage.getItem('dokuhero_storage_provider') === 'hetzner'
+      ? 'Hetzner Tresor'
+      : 'Google Drive';
+
+  const handleCreateReminder = async () => {
+    const a = result?.analysis;
+    if (!result?.document_id || !a?.frist) {
+      setReminderError('Erinnerung konnte nicht angelegt werden (fehlende Daten).');
+      return;
+    }
+    setReminderError('');
+    try {
+      await api.post('/api/reminders', {
+        document_id: result.document_id,
+        due_date: a.frist,
+        title: `${a.frist_typ || 'Frist'}: ${a.absender || 'Dokument'}`,
+      });
+      setReminderUiState('saved');
+    } catch (e) {
+      setReminderError(e?.response?.data?.error || 'Erinnerung konnte nicht gespeichert werden.');
+    }
   };
 
   useEffect(() => {
@@ -822,7 +879,13 @@ function Upload() {
             {[
               { title: 'Dokument empfangen', text: 'Datei erfolgreich übertragen' },
               { title: 'KI analysiert', text: 'Typ, Absender und Datum werden erkannt' },
-              { title: 'Google Drive', text: 'Datei wird im richtigen Ordner abgelegt' },
+              {
+                title: storageProviderLabel,
+                text:
+                  storageProviderLabel === 'Hetzner Tresor'
+                    ? 'Datei wird im Hetzner Tresor abgelegt'
+                    : 'Datei wird im richtigen Drive-Ordner abgelegt',
+              },
             ].map((step, index, all) => {
               const stepNumber = index + 1;
               const state = getStepState(stepNumber);
@@ -850,7 +913,21 @@ function Upload() {
           </section>
         )}
 
-        {(status === 'success' || status === 'duplicate') && result && (
+        {(status === 'success' || status === 'duplicate') && result && (() => {
+          const a = result.analysis || {};
+          const typStr = String(a.typ || '');
+          const isInvoiceOrSonstiges = typStr === 'Rechnung' || typStr === 'Sonstiges';
+          const euroStr = formatEuroDE(a.betrag);
+          const monthYearStr = formatMonthYearDE(a.datum);
+          const showInvoiceHighlight =
+            isInvoiceOrSonstiges && (euroStr != null || monthYearStr != null);
+          const showReminderCard =
+            Boolean(a.erinnerung_empfohlen) &&
+            !isInvoiceOrSonstiges &&
+            a.frist &&
+            reminderUiState !== 'dismissed';
+
+          return (
           <section style={{ textAlign: 'center' }}>
             <div
               style={{
@@ -895,15 +972,114 @@ function Upload() {
             </p>
             {status === 'duplicate' && (
               <p style={{ margin: '0 0 14px', color: '#6b7280', fontSize: '14px' }}>
-                Dieses Dokument ist bereits in deinem Drive vorhanden.
+                Dieses Dokument ist bereits in deinem Speicher vorhanden.
               </p>
             )}
 
+            {showInvoiceHighlight ? (
+              <div style={{ textAlign: 'left', marginBottom: '16px' }}>
+                {euroStr ? (
+                  <p style={{ margin: '0 0 6px', fontSize: '17px', fontWeight: 700, color: '#111827' }}>{euroStr}</p>
+                ) : null}
+                {monthYearStr ? (
+                  <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#374151' }}>{monthYearStr}</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {showReminderCard && reminderUiState === 'prompt' ? (
+              <div
+                style={{
+                  textAlign: 'left',
+                  background: '#eef2ff',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  marginBottom: '16px',
+                }}
+              >
+                <p style={{ margin: '0 0 6px', fontSize: '15px', fontWeight: 600, color: '#1e1b4b' }}>
+                  {`📅 ${a.frist_typ || 'Frist'} erkannt: ${formatLongDateDE(a.frist) || a.frist}`}
+                </p>
+                <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#4b5563' }}>Soll ich dich rechtzeitig erinnern?</p>
+                {reminderError ? (
+                  <p style={{ margin: '0 0 10px', fontSize: '13px', color: '#dc2626' }}>{reminderError}</p>
+                ) : null}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleCreateReminder()}
+                    style={{
+                      height: '44px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: '#6366f1',
+                      color: '#fff',
+                      fontWeight: 600,
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    ✓ Ja, erinnere mich
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReminderUiState('dismissed')}
+                    style={{
+                      height: '44px',
+                      borderRadius: '10px',
+                      border: '1px solid #d1d5db',
+                      background: '#fff',
+                      color: '#6b7280',
+                      fontWeight: 600,
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    Nein
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {reminderUiState === 'saved' ? (
+              <p style={{ margin: '0 0 16px', fontSize: '15px', fontWeight: 600, color: '#16a34a' }}>✓ Erinnerung gesetzt</p>
+            ) : null}
+
             <div style={styles.infoCard}>
-              <p style={styles.infoRow}>
-                <span style={styles.infoLabel}>Kategorie</span>
-                <span style={styles.infoValueText}>{result.analysis?.ordner || '-'}</span>
-              </p>
+              {a.ordner ? (
+                <p style={styles.infoRow}>
+                  <span style={styles.infoLabel}>Kategorie</span>
+                  <span style={styles.infoValueText}>{a.ordner}</span>
+                </p>
+              ) : null}
+              {a.absender ? (
+                <p style={styles.infoRow}>
+                  <span style={styles.infoLabel}>Absender</span>
+                  <span style={styles.infoValueText}>{a.absender}</span>
+                </p>
+              ) : null}
+              {formatEuroDE(a.betrag) ? (
+                <p style={styles.infoRow}>
+                  <span style={styles.infoLabel}>Betrag</span>
+                  <span style={styles.infoValueText}>{formatEuroDE(a.betrag)}</span>
+                </p>
+              ) : null}
+              {a.datum ? (
+                <p style={styles.infoRow}>
+                  <span style={styles.infoLabel}>Datum</span>
+                  <span style={styles.infoValueText}>{formatLongDateDE(a.datum) || a.datum}</span>
+                </p>
+              ) : null}
+              {a.frist ? (
+                <p style={styles.infoRow}>
+                  <span style={styles.infoLabel}>Frist</span>
+                  <span style={{ ...styles.infoValueText, color: '#dc2626' }}>
+                    {formatLongDateDE(a.frist) || a.frist}
+                  </span>
+                </p>
+              ) : null}
               <p style={styles.infoRow}>
                 <span style={styles.infoLabel}>Datei</span>
                 <span
@@ -916,22 +1092,21 @@ function Upload() {
                 </span>
               </p>
               <p style={styles.infoRowLast}>
-                <span style={styles.infoLabel}>Google Drive</span>
-                {result.storage?.webViewLink ? (
-                  <a
-                    href={result.storage.webViewLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={styles.infoLink}
-                  >
-                    Öffnen →
-                  </a>
-                ) : (
-                  <span style={styles.infoValueError}>
-                    {result.storage?.error || 'Nicht verfügbar'}
-                  </span>
-                )}
+                <span style={styles.infoLabel}>Gespeichert in</span>
+                <span style={styles.infoValueText}>{storageProviderLabel}</span>
               </p>
+              {storageProviderLabel === 'Google Drive' ? (
+                <p style={{ ...styles.infoRowLast, paddingTop: '8px', borderTop: '1px solid #f3f4f6' }}>
+                  <span style={styles.infoLabel}>Link</span>
+                  {result.storage?.webViewLink ? (
+                    <a href={result.storage.webViewLink} target="_blank" rel="noreferrer" style={styles.infoLink}>
+                      Öffnen →
+                    </a>
+                  ) : (
+                    <span style={styles.infoValueError}>{result.storage?.error || 'Nicht verfügbar'}</span>
+                  )}
+                </p>
+              ) : null}
             </div>
 
             {status === 'duplicate' ? (
@@ -977,7 +1152,8 @@ function Upload() {
               </button>
             )}
           </section>
-        )}
+          );
+        })()}
       </div>
 
       <style>{`

@@ -104,7 +104,6 @@ function buildJsonResponseFileMeta(file) {
 
 /**
  * @param {Record<string, unknown>} [body]
- * @returns {{ ordner: string; dateiname: string; typ: string; absender: string } | null}
  */
 function parseExistingAnalysis(body) {
   const raw = body?.existingAnalysis;
@@ -133,28 +132,40 @@ function parseExistingAnalysis(body) {
     dateiname: dateiname.trim(),
     typ: typ.trim(),
     absender: typeof obj.absender === 'string' ? obj.absender.trim() : '',
+    betrag: obj.betrag != null && obj.betrag !== '' ? String(obj.betrag) : null,
+    datum: typeof obj.datum === 'string' && obj.datum.trim() ? obj.datum.trim() : null,
+    frist: typeof obj.frist === 'string' && obj.frist.trim() ? obj.frist.trim() : null,
+    frist_typ: typeof obj.frist_typ === 'string' && obj.frist_typ.trim() ? obj.frist_typ.trim() : null,
+    erinnerung_empfohlen: Boolean(obj.erinnerung_empfohlen),
   };
+}
+
+function parseAmountForDb(betrag) {
+  if (betrag == null || betrag === '') return null;
+  const n = parseFloat(String(betrag).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
  * @param {import('express').Request} req
  * @param {import('multer').File | { buffer: Buffer; mimetype: string; originalname: string; size: number }} primaryFile
  * @param {string} ocrText
- * @param {{ ordner: string; dateiname: string; typ: string; absender?: string }} analysis
+ * @param analysis
  * @param {{ fileId?: string; fileName?: string; webViewLink?: string; duplicate?: boolean }} storageResult
  * @param {string} [storagePath]
+ * @returns {Promise<string | null>} documents.id
  */
 async function persistDocumentAndScanCount(req, primaryFile, ocrText, analysis, storageResult, storagePath) {
   console.log('[persist] userId:', req.userId, 'fileId:', storageResult?.fileId);
 
   if (!req.userId || !storageResult?.fileId) {
     console.error('[persist] SKIP - userId:', req.userId, 'fileId:', storageResult?.fileId);
-    return;
+    return null;
   }
 
   try {
     const provider = req.storageProvider || 'google_drive';
-    await supabaseService.saveDocument(req.userId, {
+    const saved = await supabaseService.saveDocument(req.userId, {
       filename: `${analysis.dateiname}.pdf`,
       originalFilename: primaryFile.originalname,
       category: analysis.ordner,
@@ -165,16 +176,18 @@ async function persistDocumentAndScanCount(req, primaryFile, ocrText, analysis, 
       webViewLink: storageResult.webViewLink || null,
       ocrText: ocrText || '',
       documentType: analysis.typ,
-      amount: null,
-      documentDate: null,
-      dueDate: null,
+      amount: parseAmountForDb(analysis.betrag),
+      documentDate: analysis.datum || null,
+      dueDate: analysis.frist || null,
       sender: analysis.absender || null,
       mimeType: primaryFile.mimetype,
       size: primaryFile.size,
     });
     await supabaseService.incrementScanCount(req.userId);
+    return saved?.id ?? null;
   } catch (err) {
     console.error('[documents] Supabase saveDocument / incrementScanCount:', err?.message || err);
+    return null;
   }
 }
 
@@ -194,6 +207,11 @@ function analysisResponsePayload(analysis) {
     dateiname: analysis.dateiname,
     typ: analysis.typ,
     absender: analysis.absender || '',
+    betrag: analysis.betrag ?? null,
+    datum: analysis.datum ?? null,
+    frist: analysis.frist ?? null,
+    frist_typ: analysis.frist_typ ?? null,
+    erinnerung_empfohlen: Boolean(analysis.erinnerung_empfohlen),
   };
 }
 
@@ -236,6 +254,11 @@ async function respondWithAnalysisAndStorage(
         typ: existingAnalysis.typ,
         absender: existingAnalysis.absender || '',
         dateiname: `${base}_copy${Date.now()}`,
+        betrag: existingAnalysis.betrag ?? null,
+        datum: existingAnalysis.datum ?? null,
+        frist: existingAnalysis.frist ?? null,
+        frist_typ: existingAnalysis.frist_typ ?? null,
+        erinnerung_empfohlen: Boolean(existingAnalysis.erinnerung_empfohlen),
       };
     } else {
       analysis = await aiService.analyzeDocument(ocrText);
@@ -272,12 +295,13 @@ async function respondWithAnalysisAndStorage(
       req.storageProvider === 'hetzner'
         ? storageResult.storagePath || null
         : `${analysis.ordner}/${storageResult.fileName || `${analysis.dateiname}.pdf`}`;
-    await persistDocumentAndScanCount(req, fileForUpload, ocrText, analysis, storageResult, storagePath);
+    const documentId = await persistDocumentAndScanCount(req, fileForUpload, ocrText, analysis, storageResult, storagePath);
 
     return res.json({
       success: true,
       message: storageResult.duplicate ? 'Dokument bereits vorhanden' : 'Dokument erfolgreich abgelegt',
       file: buildJsonResponseFileMeta(fileForUpload),
+      document_id: documentId,
       analysis: analysisResponsePayload(analysis),
       storage: {
         fileId: storageResult.fileId,

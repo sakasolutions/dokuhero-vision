@@ -29,6 +29,7 @@ router.get('/me', requireAuth, async (req, res) => {
     if (!req.userId) {
       return res.status(400).json({ error: 'User-ID fehlt' });
     }
+    console.log('[user/me] userId:', req.userId);
     const user = await supabaseService.getUser(req.userId);
     return res.json({ success: true, user });
   } catch (error) {
