@@ -22,7 +22,12 @@ function getSupabase() {
         },
       },
     });
-    console.log('[Supabase] Client initialisiert, URL:', url?.substring(0, 30), 'Key prefix:', key?.substring(0, 10));
+    console.log(
+      '[Supabase] Client initialisiert, URL:',
+      typeof url === 'string' ? url.substring(0, 30) : '',
+      'Key prefix:',
+      typeof key === 'string' ? key.substring(0, 10) : ''
+    );
   }
   return _supabase;
 }
@@ -159,7 +164,7 @@ function quotePostgrestFilterValue(value) {
 
 // Volltextsuche (ocr_text) + ILIKE über mehrere Spalten, Treffer zusammenführen
 async function searchDocuments(userId, query) {
-  const q = String(query ?? '').trim();
+  const q = String(query == null ? '' : query).trim();
   if (!q) return [];
 
   const supabase = getSupabase();
@@ -207,7 +212,7 @@ async function getUser(userId) {
     .eq('id', userId)
     .single();
 
-  console.log('[getUser] data:', data, 'error:', error?.message, 'code:', error?.code);
+  console.log('[getUser] data:', data, 'error:', error && error.message, 'code:', error && error.code);
 
   if (error) return null;
   return data;
@@ -231,10 +236,10 @@ async function updateStorageProvider(userId, provider) {
 
 async function updateDriveTokens(userId, tokens) {
   const updates = {
-    drive_access_token: tokens?.access_token ?? null,
+    drive_access_token: tokens != null && tokens.access_token != null ? tokens.access_token : null,
     updated_at: new Date().toISOString(),
   };
-  const rt = tokens?.refresh_token;
+  const rt = tokens != null ? tokens.refresh_token : undefined;
   if (rt != null && String(rt).trim() !== '') {
     updates.drive_refresh_token = String(rt).trim();
   }
