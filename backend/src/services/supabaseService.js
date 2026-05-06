@@ -7,9 +7,14 @@ let _supabase;
 function getSupabase() {
   if (!_supabase) {
     const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_KEY;
+    const key = String(process.env.SUPABASE_SERVICE_KEY || '').trim();
     if (!url || !key) {
       throw new Error('SUPABASE_URL und SUPABASE_SERVICE_KEY müssen gesetzt sein.');
+    }
+    if (key.startsWith('sb_publish')) {
+      throw new Error(
+        'SUPABASE_SERVICE_KEY ist der Publishable/Anon-Key (beginnt mit sb_publish). Trage den geheimen «service_role»-Schlüssel ein: Supabase Dashboard → Project Settings → API → «service_role» «Reveal» / Secret — nicht «anon» oder «publishable».'
+      );
     }
     _supabase = createClient(url, key, {
       auth: {
