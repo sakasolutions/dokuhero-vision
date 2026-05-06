@@ -1,0 +1,1687 @@
+======== FILE: backend/src/services/supabaseService.js ========
+require('dotenv').config();
+
+const { createClient } = require('@supabase/supabase-js');
+
+let _supabase;
+
+function getSupabase() {
+  if (!_supabase) {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_KEY;
+    if (!url || !key) {
+      throw new Error('SUPABASE_URL und SUPABASE_SERVICE_KEY müssen gesetzt sein.');
+    }
+    _supabase = createClient(url, key);
+  }
+  return _supabase;
+}
+
+/** Lazy-Client — gleiche API wie zuvor `supabase` Konstante */
+const supabase = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      const client = getSupabase();
+      const value = client[prop];
+      return typeof value === 'function' ? value.bind(client) : value;
+    },
+  }
+);
+
+// User anlegen oder updaten nach Login
+async function upsertUser(userData) {
+  const { id, email, name, avatar_url } = userData;
+
+  const { data, error } = await getSupabase()
+    .from('users')
+    .upsert(
+      {
+        id,
+        email,
+        name,
+        avatar_url,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    )
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+// Dokument in DB speichern
+async function saveDocument(userId, documentData) {
+  const { data, error } = await getSupabase()
+    .from('documents')
+    .insert({
+      user_id: userId,
+      filename: documentData.filename,
+      original_filename: documentData.originalFilename,
+      category: documentData.category,
+      subcategory: documentData.subcategory,
+      provider: documentData.provider,
+      storage_path: documentData.storagePath,
+      drive_file_id: documentData.driveFileId,
+      drive_web_link: documentData.webViewLink,
+      ocr_text: documentData.ocrText,
+      document_type: documentData.documentType,
+      amount: documentData.amount,
+      document_date: documentData.documentDate,
+      due_date: documentData.dueDate,
+      sender: documentData.sender,
+      mime_type: documentData.mimeType,
+      size: documentData.size,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+// Dokumente eines Users laden
+async function getUserDocuments(userId) {
+  const { data, error } = await getSupabase()
+    .from('documents')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+}
+
+async function getDocument(id, userId) {
+  const { data, error } = await getSupabase()
+    .from('documents')
+    .select('*')
+    .eq('id', id)
+    .eq('user_id', userId)
+    .single();
+
+  if (error) return null;
+  return data;
+}
+
+async function getDocumentsByCategory(userId, category) {
+  const { data, error } = await getSupabase()
+    .from('documents')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('category', category)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function getDocumentsByCategoryAndSubcategory(userId, category, subcategory) {
+  const { data, error } = await getSupabase()
+    .from('documents')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('category', category)
+    .eq('subcategory', subcategory)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function deleteDocument(id, userId) {
+  const { error } = await supabase.from('documents').delete().eq('id', id).eq('user_id', userId);
+
+  if (error) throw error;
+}
+
+/** Metazeichen in LIKE-Mustern neutralisieren (`%`, `_`, `\`). */
+function escapeLikePattern(raw) {
+  return String(raw).replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
+/** Wert für PostgREST-`.or()`-Filter quoten (Kommas u. ä. im Suchbegriff). */
+function quotePostgrestFilterValue(value) {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+// Volltextsuche (ocr_text) + ILIKE über mehrere Spalten, Treffer zusammenführen
+async function searchDocuments(userId, query) {
+  const q = String(query ?? '').trim();
+  if (!q) return [];
+
+  const supabase = getSupabase();
+  const likePat = `%${escapeLikePattern(q)}%`;
+  const quotedPat = quotePostgrestFilterValue(likePat);
+  const likeOr = [
+    `ocr_text.ilike.${quotedPat}`,
+    `filename.ilike.${quotedPat}`,
+    `category.ilike.${quotedPat}`,
+    `sender.ilike.${quotedPat}`,
+    `subcategory.ilike.${quotedPat}`,
+  ].join(',');
+
+  const [ftsResult, likeResult] = await Promise.all([
+    supabase
+      .from('documents')
+      .select('*')
+      .eq('user_id', userId)
+      .textSearch('ocr_text', q, {
+        type: 'websearch',
+        config: 'german',
+      }),
+    supabase.from('documents').select('*').eq('user_id', userId).or(likeOr),
+  ]);
+
+  if (ftsResult.error) throw ftsResult.error;
+  if (likeResult.error) throw likeResult.error;
+
+  const ftsRows = ftsResult.data || [];
+  const likeRows = likeResult.data || [];
+  const ftsIds = new Set(ftsRows.map((r) => r.id));
+
+  const merged = [...ftsRows];
+  for (const row of likeRows) {
+    if (!ftsIds.has(row.id)) merged.push(row);
+  }
+  return merged;
+}
+
+// User laden (inkl. Drive-Tokens für serverseitiges Refresh)
+async function getUser(userId) {
+  const { data, error } = await getSupabase()
+    .from('users')
+    .select('id, email, name, avatar_url, storage_provider, drive_access_token, drive_refresh_token, updated_at')
+    .eq('id', userId)
+    .single();
+
+  if (error) return null;
+  return data;
+}
+
+// Scan Counter erhöhen
+async function incrementScanCount(userId) {
+  const { data, error } = await getSupabase().rpc('increment_scan_count', { user_id: userId });
+
+  if (error) throw error;
+  return data;
+}
+
+async function updateStorageProvider(userId, provider) {
+  const { error } = await getSupabase()
+    .from('users')
+    .update({ storage_provider: provider, updated_at: new Date().toISOString() })
+    .eq('id', userId);
+  if (error) throw error;
+}
+
+async function updateDriveTokens(userId, tokens) {
+  const updates = {
+    drive_access_token: tokens?.access_token ?? null,
+    updated_at: new Date().toISOString(),
+  };
+  const rt = tokens?.refresh_token;
+  if (rt != null && String(rt).trim() !== '') {
+    updates.drive_refresh_token = String(rt).trim();
+  }
+
+  const { error } = await getSupabase().from('users').update(updates).eq('id', userId);
+  if (error) throw error;
+}
+
+async function createReminder({ user_id, document_id, due_date, title }) {
+  if (!user_id) throw new Error('Kein Benutzer');
+  if (!due_date) throw new Error('due_date erforderlich');
+
+  if (document_id) {
+    const doc = await getDocument(document_id, user_id);
+    if (!doc) throw new Error('Dokument nicht gefunden');
+  }
+
+  const { data, error } = await getSupabase()
+    .from('reminders')
+    .insert({ user_id, document_id, due_date, title })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+async function getUserReminders(userId) {
+  const { data, error } = await getSupabase()
+    .from('reminders')
+    .select('*, documents(filename, category, sender)')
+    .eq('user_id', userId)
+    .eq('sent', false)
+    .order('due_date', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+module.exports = {
+  supabase,
+  upsertUser,
+  saveDocument,
+  getDocument,
+  deleteDocument,
+  getDocumentsByCategory,
+  getDocumentsByCategoryAndSubcategory,
+  getUserDocuments,
+  searchDocuments,
+  getUser,
+  incrementScanCount,
+  updateStorageProvider,
+  updateDriveTokens,
+  createReminder,
+  getUserReminders,
+};
+
+======== FILE: backend/src/routes/user.js ========
+const express = require('express');
+
+const requireAuth = require('../middleware/auth');
+const supabaseService = require('../services/supabaseService');
+
+const router = express.Router();
+
+// POST /api/user/storage-provider
+router.post('/storage-provider', requireAuth, async (req, res) => {
+  try {
+    const { provider } = req.body || {};
+    if (!['hetzner', 'google_drive'].includes(provider)) {
+      return res.status(400).json({ error: 'Ungültiger Provider' });
+    }
+    if (!req.userId) {
+      return res.status(400).json({ error: 'User-ID fehlt' });
+    }
+
+    await supabaseService.updateStorageProvider(req.userId, provider);
+    return res.json({ success: true, provider });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/user/me
+router.get('/me', requireAuth, async (req, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(400).json({ error: 'User-ID fehlt' });
+    }
+    console.log('[user/me] userId:', req.userId);
+    const user = await supabaseService.getUser(req.userId);
+    return res.json({ success: true, user });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+module.exports = router;
+
+======== FILE: backend/src/routes/auth.js ========
+const crypto = require('crypto');
+const express = require('express');
+const { google } = require('googleapis');
+
+const supabaseService = require('../services/supabaseService');
+const requireAuth = require('../middleware/auth');
+const { resolveGoogleIdentity } = require('../utils/userIdentity');
+
+const OAuth2Client = google.auth.OAuth2;
+
+const router = express.Router();
+
+const oauth2Client = new OAuth2Client(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.GOOGLE_REDIRECT_URI
+);
+
+const SCOPES = [
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
+];
+
+const DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive.file'];
+const GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
+
+function resolveGmailRedirectUri() {
+  if (process.env.GOOGLE_GMAIL_REDIRECT_URI) {
+    return process.env.GOOGLE_GMAIL_REDIRECT_URI;
+  }
+  const base = process.env.GOOGLE_REDIRECT_URI;
+  if (base && typeof base === 'string') {
+    return base.replace(/\/callback\/?$/i, '/gmail/callback');
+  }
+  return null;
+}
+
+const gmailRedirectUri = resolveGmailRedirectUri();
+
+const oauth2GmailClient = gmailRedirectUri
+  ? new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      gmailRedirectUri
+    )
+  : null;
+
+function resolveDriveRedirectUri() {
+  if (process.env.GOOGLE_DRIVE_REDIRECT_URI) {
+    return process.env.GOOGLE_DRIVE_REDIRECT_URI;
+  }
+  const base = process.env.GOOGLE_REDIRECT_URI;
+  if (base && typeof base === 'string') {
+    return base.replace(/\/callback\/?$/i, '/drive/callback');
+  }
+  return null;
+}
+
+const driveRedirectUri = resolveDriveRedirectUri();
+
+const oauth2DriveClient = driveRedirectUri
+  ? new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      driveRedirectUri
+    )
+  : null;
+
+function getOAuthStateSecret() {
+  return process.env.OAUTH_STATE_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+}
+
+function signOAuthState(payload) {
+  const secret = getOAuthStateSecret();
+  if (!secret) {
+    throw new Error('OAuth state secret is not configured');
+  }
+
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+  return `${encodedPayload}.${signature}`;
+}
+
+function verifyOAuthState(state) {
+  const secret = getOAuthStateSecret();
+  if (!secret || !state || typeof state !== 'string') {
+    return null;
+  }
+
+  const [encodedPayload, providedSignature] = state.split('.');
+  if (!encodedPayload || !providedSignature) {
+    return null;
+  }
+
+  const expectedSignature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+  if (providedSignature !== expectedSignature) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+    if (!payload || payload.type !== 'drive' || !payload.userId) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+router.get('/google', (_req, res) => {
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: SCOPES,
+  });
+
+  res.redirect(authUrl);
+});
+
+/** Separater OAuth-Flow nur für Gmail (gmail.readonly). Callback legt Tokens in der Settings-URL ab. */
+router.get('/gmail', (_req, res) => {
+  if (!oauth2GmailClient || !gmailRedirectUri) {
+    return res.status(500).json({
+      success: false,
+      error:
+        'Gmail-OAuth nicht konfiguriert: GOOGLE_GMAIL_REDIRECT_URI setzen oder GOOGLE_REDIRECT_URI auf …/api/auth/callback anpassen (…/gmail/callback wird abgeleitet).',
+    });
+  }
+
+  const authUrl = oauth2GmailClient.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: GMAIL_SCOPES,
+    include_granted_scopes: true,
+  });
+
+  res.redirect(authUrl);
+});
+
+router.get('/gmail/callback', async (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+  if (!oauth2GmailClient) {
+    return res.redirect(`${frontendUrl}/settings?gmail=error`);
+  }
+
+  try {
+    const { code } = req.query;
+
+    if (!code) {
+      return res.redirect(`${frontendUrl}/settings?gmail=error`);
+    }
+
+    const { tokens } = await oauth2GmailClient.getToken(code);
+    oauth2GmailClient.setCredentials(tokens);
+
+    if (!tokens.access_token) {
+      return res.redirect(`${frontendUrl}/settings?gmail=error`);
+    }
+
+    const target = new URL(`${frontendUrl.replace(/\/$/, '')}/settings`);
+    target.searchParams.set('gmail', 'connected');
+    target.searchParams.set('gmail_token', tokens.access_token);
+    if (tokens.refresh_token) {
+      target.searchParams.set('gmail_refresh', tokens.refresh_token);
+    }
+
+    return res.redirect(target.toString());
+  } catch {
+    return res.redirect(`${frontendUrl}/settings?gmail=error`);
+  }
+});
+
+router.post('/drive-url', requireAuth, (req, res) => {
+  if (!oauth2DriveClient || !driveRedirectUri) {
+    return res.status(500).json({
+      success: false,
+      error: 'Drive-OAuth nicht konfiguriert (GOOGLE_DRIVE_REDIRECT_URI oder GOOGLE_REDIRECT_URI).',
+    });
+  }
+
+  if (!req.userId) {
+    return res.status(401).json({ success: false, error: 'Nicht authentifiziert' });
+  }
+
+  const state = signOAuthState({
+    type: 'drive',
+    userId: req.userId,
+    createdAt: Date.now(),
+  });
+
+  const authUrl = oauth2DriveClient.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: DRIVE_SCOPES,
+    include_granted_scopes: true,
+    state,
+  });
+
+  return res.json({ success: true, authUrl });
+});
+
+router.get('/drive/callback', async (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+  if (!oauth2DriveClient) {
+    return res.redirect(`${frontendUrl}/settings?drive=error`);
+  }
+
+  try {
+    const { code, state } = req.query;
+    const verifiedState = verifyOAuthState(state);
+    const userId = String(verifiedState?.userId || '').trim();
+
+    if (!code || !userId) {
+      return res.redirect(`${frontendUrl}/settings?drive=error`);
+    }
+
+    const { tokens } = await oauth2DriveClient.getToken(code);
+    oauth2DriveClient.setCredentials(tokens);
+
+    if (!tokens?.access_token) {
+      return res.redirect(`${frontendUrl}/settings?drive=error`);
+    }
+
+    await supabaseService.updateDriveTokens(userId, tokens);
+    const params = new URLSearchParams();
+    params.set('drive', 'connected');
+    params.set('drive_token', tokens.access_token);
+    return res.redirect(`${frontendUrl}/settings?${params.toString()}`);
+  } catch (err) {
+    console.error('[auth/drive/callback]', err?.message || err);
+    return res.redirect(`${frontendUrl}/settings?drive=error`);
+  }
+});
+
+router.get('/callback', async (req, res) => {
+  try {
+    const { code } = req.query;
+
+    if (!code) {
+      return res.status(400).json({ success: false, error: 'Missing code parameter' });
+    }
+
+    const { tokens } = await oauth2Client.getToken(code);
+    oauth2Client.setCredentials(tokens);
+
+    if (!tokens.access_token) {
+      return res.status(500).json({ success: false, error: 'No access token returned by Google' });
+    }
+
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const { data: user } = await oauth2.userinfo.get();
+
+    const { userId } = resolveGoogleIdentity(user);
+
+    try {
+      await supabaseService.upsertUser({
+        id: userId,
+        email: user?.email || null,
+        name: user?.name || null,
+        avatar_url: user?.picture || null,
+      });
+    } catch (err) {
+      console.error('[auth/callback] Supabase upsertUser:', err?.message || err);
+    }
+
+    const params = new URLSearchParams();
+    params.set('access_token', tokens.access_token);
+    if (tokens.refresh_token) {
+      params.set('refresh_token', tokens.refresh_token);
+    }
+    const redirectUrl = `${process.env.FRONTEND_URL}/upload?${params.toString()}`;
+    return res.redirect(redirectUrl);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'OAuth callback failed',
+    });
+  }
+});
+
+router.post('/refresh', async (req, res) => {
+  try {
+    const { refresh_token: refreshToken } = req.body || {};
+
+    if (!refreshToken) {
+      return res.status(400).json({ success: false, error: 'Missing refresh_token' });
+    }
+
+    const refreshClient = new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
+
+    refreshClient.setCredentials({ refresh_token: refreshToken });
+    const tokenResponse = await refreshClient.getAccessToken();
+    const newAccessToken = tokenResponse?.token;
+
+    if (!newAccessToken) {
+      return res.status(500).json({ success: false, error: 'Could not refresh access token' });
+    }
+
+    return res.json({
+      success: true,
+      access_token: newAccessToken,
+      expiry_date: refreshClient.credentials?.expiry_date || null,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Token refresh failed',
+    });
+  }
+});
+
+router.get('/logout', (_req, res) => {
+  res.json({ success: true, message: 'Logged out' });
+});
+
+module.exports = router;
+
+======== FILE: backend/src/middleware/auth.js ========
+const { google } = require('googleapis');
+
+const supabaseService = require('../services/supabaseService');
+const { resolveGoogleIdentity } = require('../utils/userIdentity');
+
+/** Gleiche Logik wie auth-Routen: Drive-Consent nutzt oft …/drive/callback — Refresh muss dieselbe Client-Redirect-URI nutzen. */
+function resolveDriveOAuthRedirectUri() {
+  if (process.env.GOOGLE_DRIVE_REDIRECT_URI) {
+    return process.env.GOOGLE_DRIVE_REDIRECT_URI;
+  }
+  const base = process.env.GOOGLE_REDIRECT_URI;
+  if (base && typeof base === 'string') {
+    return base.replace(/\/callback\/?$/i, '/drive/callback');
+  }
+  return process.env.GOOGLE_REDIRECT_URI;
+}
+
+/**
+ * @param {string} refreshToken
+ * @returns {Promise<import('google-auth-library').Credentials>}
+ */
+async function refreshDriveToken(refreshToken) {
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    resolveDriveOAuthRedirectUri()
+  );
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
+  const { credentials } = await oauth2Client.refreshAccessToken();
+  return credentials;
+}
+
+/**
+ * @param {string} accessToken
+ * @returns {Promise<boolean>}
+ */
+async function isDriveAccessTokenValid(accessToken) {
+  if (!accessToken || typeof accessToken !== 'string') {
+    return false;
+  }
+  try {
+    const auth = new google.auth.OAuth2();
+    auth.setCredentials({ access_token: accessToken });
+    const drive = google.drive({ version: 'v3', auth });
+    await drive.about.get({ fields: 'user' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Lädt Drive-Access-Token aus Supabase, prüft Gültigkeit per Drive API, refresht bei Bedarf.
+ * Ignoriert x-drive-token — nur serverseitige Tokens.
+ *
+ * @param {import('express').Request} req
+ */
+async function resolveDriveTokenFromSupabase(req) {
+  req.driveToken = null;
+  req.storageProvider = null;
+
+  const userId = req.userId;
+  if (!userId) {
+    return;
+  }
+
+  try {
+    const user = await supabaseService.getUser(userId);
+    if (!user) {
+      return;
+    }
+
+    req.storageProvider = user.storage_provider ?? null;
+
+    const access = user.drive_access_token ? String(user.drive_access_token).trim() : '';
+    const refresh = user.drive_refresh_token ? String(user.drive_refresh_token).trim() : '';
+
+    if (!access && !refresh) {
+      return;
+    }
+
+    if (access && (await isDriveAccessTokenValid(access))) {
+      req.driveToken = access;
+      return;
+    }
+
+    if (!refresh) {
+      return;
+    }
+
+    const credentials = await refreshDriveToken(refresh);
+    if (!credentials?.access_token) {
+      return;
+    }
+
+    await supabaseService.updateDriveTokens(userId, {
+      access_token: credentials.access_token,
+      refresh_token: credentials.refresh_token || refresh,
+    });
+    req.driveToken = credentials.access_token;
+  } catch (err) {
+    console.error('[requireAuth] resolveDriveTokenFromSupabase:', err?.message || err);
+    req.driveToken = null;
+  }
+}
+
+async function fetchAuthenticatedUser(accessToken) {
+  const oauth2 = google.oauth2('v2');
+  const auth = new google.auth.OAuth2();
+  auth.setCredentials({ access_token: accessToken });
+
+  const { data: user } = await oauth2.userinfo.get({ auth });
+  const { userId } = resolveGoogleIdentity(user);
+  return userId;
+}
+
+async function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.replace('Bearer ', '').trim();
+
+  if (!token) {
+    return res.status(401).json({ error: 'Kein Token' });
+  }
+
+  try {
+    req.accessToken = token;
+    req.userId = await fetchAuthenticatedUser(token);
+    await resolveDriveTokenFromSupabase(req);
+    return next();
+  } catch (_err) {
+    const refreshToken = req.headers['x-refresh-token'];
+
+    if (!refreshToken) {
+      return res.status(401).json({ error: 'Token abgelaufen', code: 'TOKEN_EXPIRED' });
+    }
+
+    try {
+      const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
+      oauth2Client.setCredentials({ refresh_token: String(refreshToken).trim() });
+
+      const { credentials } = await oauth2Client.refreshAccessToken();
+      if (!credentials?.access_token) {
+        return res.status(401).json({ error: 'Refresh fehlgeschlagen', code: 'REFRESH_FAILED' });
+      }
+
+      req.accessToken = credentials.access_token;
+      req.userId = await fetchAuthenticatedUser(credentials.access_token);
+
+      res.setHeader('x-new-token', credentials.access_token);
+      if (credentials.expiry_date) {
+        res.setHeader('x-new-expiry', String(credentials.expiry_date));
+      }
+
+      await resolveDriveTokenFromSupabase(req);
+      return next();
+    } catch (_refreshErr) {
+      return res.status(401).json({ error: 'Refresh fehlgeschlagen', code: 'REFRESH_FAILED' });
+    }
+  }
+}
+
+module.exports = requireAuth;
+
+======== FILE: frontend/src/services/api.js ========
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: '',
+});
+
+api.interceptors.request.use((config) => {
+  config.headers = config.headers || {};
+  const existingAuth = config.headers.Authorization;
+  if (existingAuth == null || String(existingAuth).trim() === '') {
+    const token = localStorage.getItem('dokuhero_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  }
+  const refreshToken = localStorage.getItem('dokuhero_refresh_token');
+  if (refreshToken) {
+    config.headers['x-refresh-token'] = refreshToken;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => {
+    const newToken = response?.headers?.['x-new-token'];
+    const newExpiry = response?.headers?.['x-new-expiry'];
+    if (newToken) {
+      localStorage.setItem('dokuhero_token', newToken);
+      if (newExpiry) {
+        localStorage.setItem('dokuhero_token_expiry', newExpiry);
+      }
+    }
+    return response;
+  },
+  async (error) => {
+    const code = error?.response?.data?.code;
+    if (code === 'REFRESH_FAILED') {
+      localStorage.removeItem('dokuhero_token');
+      localStorage.removeItem('dokuhero_refresh_token');
+      localStorage.removeItem('dokuhero_token_expiry');
+      window.location.href = '/';
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default api;
+
+======== FILE: frontend/src/pages/Onboarding.jsx ========
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+import api from '../services/api';
+
+function Logo() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+      <div
+        style={{
+          width: '30px',
+          height: '30px',
+          borderRadius: '8px',
+          backgroundColor: '#6366f1',
+          color: '#fff',
+          display: 'grid',
+          placeItems: 'center',
+          fontWeight: 700,
+          fontSize: '20px',
+          lineHeight: 1,
+        }}
+      >
+        D
+      </div>
+      <span style={{ color: '#111827', fontSize: '18px', fontWeight: 700 }}>DokuHero</span>
+    </div>
+  );
+}
+
+export default function Onboarding() {
+  const navigate = useNavigate();
+  const [saving, setSaving] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const token = localStorage.getItem('dokuhero_token');
+    if (!token) {
+      navigate('/');
+      return;
+    }
+    const cached = localStorage.getItem('dokuhero_storage_provider');
+    if (cached) {
+      navigate('/upload');
+    }
+  }, [navigate]);
+
+  const saveProvider = async (provider) => {
+    if (saving) return;
+    setSaving(provider);
+    setError('');
+    try {
+      await api.post('/api/user/storage-provider', { provider });
+      localStorage.setItem('dokuhero_storage_provider', provider);
+      if (provider === 'google_drive') {
+        const response = await api.post('/api/auth/drive-url');
+        const authUrl = response?.data?.authUrl;
+        if (!authUrl) {
+          throw new Error('Drive-Verbindung konnte nicht gestartet werden.');
+        }
+        window.location.href = authUrl;
+        return;
+      }
+      navigate('/upload');
+    } catch (e) {
+      setError(e?.response?.data?.error || 'Speichern fehlgeschlagen');
+    } finally {
+      setSaving('');
+    }
+  };
+
+  const cardStyle = {
+    background: '#fff',
+    borderRadius: '16px',
+    padding: '20px',
+  };
+
+  return (
+    <main
+      style={{
+        minHeight: '100vh',
+        background: '#f3f4f6',
+        color: '#111827',
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      }}
+    >
+      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '28px 20px 40px' }}>
+        <header style={{ display: 'grid', placeItems: 'center' }}>
+          <Logo />
+        </header>
+
+        <section style={{ marginTop: '24px', textAlign: 'center' }}>
+          <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700 }}>
+            Wo sollen deine Dokumente gespeichert werden?
+          </h1>
+          <p style={{ margin: '8px 0 0', fontSize: '14px', color: '#9ca3af' }}>
+            Du kannst das später in den Einstellungen ändern.
+          </p>
+        </section>
+
+        {error ? (
+          <p style={{ margin: '14px 0 0', color: '#dc2626', fontSize: '13px', textAlign: 'center' }}>{error}</p>
+        ) : null}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '24px' }}>
+          <article style={{ ...cardStyle, border: '2px solid #6366f1' }}>
+            <span
+              style={{
+                display: 'inline-block',
+                background: '#eef2ff',
+                color: '#6366f1',
+                fontSize: '12px',
+                borderRadius: '20px',
+                padding: '4px 12px',
+                fontWeight: 600,
+              }}
+            >
+              Empfohlen
+            </span>
+            <div style={{ marginTop: '12px', fontSize: '40px', lineHeight: 1 }}>🇩🇪</div>
+            <h2 style={{ margin: '12px 0 0', fontSize: '16px', fontWeight: 700 }}>DokuHero Tresor</h2>
+            <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#6b7280' }}>
+              Deine Dokumente liegen verschlüsselt auf deutschen Servern. Nur du hast Zugriff.
+            </p>
+            <ul style={{ margin: '12px 0 0', padding: 0, listStyle: 'none', fontSize: '13px', color: '#374151' }}>
+              <li>✓ DSGVO-konform</li>
+              <li>✓ Verschlüsselt in Deutschland</li>
+              <li>✓ Kein Google-Zugriff</li>
+            </ul>
+            <button
+              type="button"
+              onClick={() => saveProvider('hetzner')}
+              disabled={Boolean(saving)}
+              style={{
+                marginTop: '14px',
+                width: '100%',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '14px',
+                background: '#6366f1',
+                color: '#fff',
+                fontWeight: 600,
+                fontSize: '14px',
+                cursor: saving ? 'wait' : 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              {saving === 'hetzner' ? 'Speichern...' : 'Tresor wählen'}
+            </button>
+          </article>
+
+          <article style={{ ...cardStyle, border: '1px solid #e5e7eb' }}>
+            <div style={{ marginTop: '2px', fontSize: '36px', lineHeight: 1 }}>📁</div>
+            <h2 style={{ margin: '12px 0 0', fontSize: '16px', fontWeight: 700 }}>Google Drive</h2>
+            <p style={{ margin: '8px 0 0', fontSize: '13px', color: '#6b7280' }}>
+              Dokumente werden in deinem persönlichen Google Drive gespeichert.
+            </p>
+            <ul style={{ margin: '12px 0 0', padding: 0, listStyle: 'none', fontSize: '13px', color: '#374151' }}>
+              <li>✓ In deiner Google-Infrastruktur</li>
+              <li>✓ Überall zugänglich</li>
+              <li>✓ Google Drive Suche</li>
+            </ul>
+            <button
+              type="button"
+              onClick={() => saveProvider('google_drive')}
+              disabled={Boolean(saving)}
+              style={{
+                marginTop: '14px',
+                width: '100%',
+                border: '1px solid #6366f1',
+                borderRadius: '10px',
+                padding: '14px',
+                background: '#fff',
+                color: '#6366f1',
+                fontWeight: 600,
+                fontSize: '14px',
+                cursor: saving ? 'wait' : 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              {saving === 'google_drive' ? 'Speichern...' : 'Google Drive wählen'}
+            </button>
+          </article>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+======== FILE: frontend/src/pages/Settings.jsx ========
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+import BottomNav from '../components/BottomNav';
+import api from '../services/api';
+
+const LS_STORAGE_PROVIDER = 'dokuhero_storage_provider';
+
+const LS_GMAIL = 'gmail_token';
+const LS_GMAIL_REFRESH = 'gmail_refresh_token';
+
+function getInitialSettingsToast() {
+  const params = new URLSearchParams(window.location.search);
+
+  if (params.get('drive') === 'connected') {
+    return { type: 'success', text: 'Google Drive erfolgreich verbunden!' };
+  }
+  if (params.get('drive') === 'error') {
+    return { type: 'error', text: 'Google Drive konnte nicht verbunden werden.' };
+  }
+  if (params.get('gmail_token')) {
+    return { type: 'success', text: 'Gmail erfolgreich verbunden!' };
+  }
+  if (params.get('gmail') === 'error') {
+    return { type: 'error', text: 'Gmail konnte nicht verbunden werden.' };
+  }
+
+  return null;
+}
+
+function IconLogoutDoor() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"
+        stroke="#9ca3af"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <path
+        d="M16 17l5-5-5-5M21 12H9"
+        stroke="#9ca3af"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconSettingsHeader({ size = 24, color = '#6366f1' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+        stroke={color}
+        strokeWidth="1.7"
+      />
+      <path
+        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
+        stroke={color}
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconGoogleDrive() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="#0066DA" d="M7.71 15.29 2 5.42h6.84l5.71 9.87z" />
+      <path fill="#00AC47" d="m17.16 5.42-5.16 8.94h10.32L17.16 5.42z" />
+      <path fill="#EA4335" d="M12 20.58 17.71 10.71H6.29L12 20.58z" />
+      <path fill="#2684FC" d="M6.29 10.71 12 20.58 2 5.42h4.29z" />
+      <path fill="#FFBA00" d="M17.71 10.71 12 20.58l10-15.16h-4.29z" />
+    </svg>
+  );
+}
+
+function IconGmailCard({ size = 26, color = '#6366f1' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 6h16v12H4V6Z"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path d="M4 8l8 6 8-6" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconOutlook({ size = 26 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2" stroke="#0078D4" strokeWidth="1.6" />
+      <path d="M3 8l9 5 9-5" stroke="#0078D4" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconImapMail({ size = 26, color = '#6366f1' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 7h16v10H4V7Z"
+        stroke={color}
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path d="M4 9l8 5 8-5" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconServer({ size = 26, color = '#6366f1' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="4" y="5" width="16" height="5" rx="1.5" stroke={color} strokeWidth="1.6" />
+      <rect x="4" y="14" width="16" height="5" rx="1.5" stroke={color} strokeWidth="1.6" />
+      <circle cx="8" cy="7.5" r="0.8" fill={color} />
+      <circle cx="8" cy="16.5" r="0.8" fill={color} />
+    </svg>
+  );
+}
+
+function badgeSoon() {
+  return (
+    <span
+      style={{
+        fontSize: '11px',
+        fontWeight: 600,
+        color: '#9ca3af',
+        background: '#f3f4f6',
+        padding: '4px 8px',
+        borderRadius: '6px',
+      }}
+    >
+      Bald verfügbar
+    </span>
+  );
+}
+
+function sectionTitle(text) {
+  return (
+    <p
+      style={{
+        margin: '0 0 10px',
+        fontSize: '12px',
+        fontWeight: 700,
+        letterSpacing: '0.06em',
+        color: '#9ca3af',
+      }}
+    >
+      {text}
+    </p>
+  );
+}
+
+export default function Settings() {
+  const navigate = useNavigate();
+  const [gmailConnected, setGmailConnected] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return !!localStorage.getItem(LS_GMAIL) || !!params.get('gmail_token');
+  });
+  const [driveConnected, setDriveConnected] = useState(false);
+  const [storageProvider, setStorageProvider] = useState(null);
+  const [meLoading, setMeLoading] = useState(true);
+  const [activatingProvider, setActivatingProvider] = useState(null);
+  const [toast, setToast] = useState(() => getInitialSettingsToast());
+
+  useEffect(() => {
+    const token = localStorage.getItem('dokuhero_token');
+    if (!token) {
+      navigate('/');
+    }
+  }, [navigate]);
+
+  async function fetchUserMe() {
+    const token = localStorage.getItem('dokuhero_token');
+    if (!token) return;
+    setMeLoading(true);
+    try {
+      const { data } = await api.get('/api/user/me');
+      if (data?.success && data.user) {
+        const sp = data.user.storage_provider || null;
+        setStorageProvider(sp);
+        const linked = !!(data.user.drive_access_token || data.user.drive_refresh_token);
+        setDriveConnected(linked);
+        if (linked) {
+          localStorage.setItem('dokuhero_drive_connected', 'true');
+        }
+        if (sp) {
+          localStorage.setItem(LS_STORAGE_PROVIDER, sp);
+        } else {
+          localStorage.removeItem(LS_STORAGE_PROVIDER);
+        }
+      }
+    } catch {
+      setToast({ type: 'error', text: 'Profil konnte nicht geladen werden.' });
+    } finally {
+      setMeLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchUserMe();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gToken = params.get('gmail_token');
+    const gRefresh = params.get('gmail_refresh');
+    const gmailErr = params.get('gmail');
+    const driveStatus = params.get('drive');
+    const driveToken = params.get('drive_token');
+
+    if (gToken) {
+      localStorage.setItem(LS_GMAIL, gToken);
+      if (gRefresh) {
+        localStorage.setItem(LS_GMAIL_REFRESH, gRefresh);
+      }
+      window.history.replaceState({}, '', `${window.location.pathname}`);
+    } else if (gmailErr === 'error') {
+      window.history.replaceState({}, '', `${window.location.pathname}`);
+    }
+
+    if (driveStatus === 'connected') {
+      localStorage.setItem('dokuhero_drive_connected', 'true');
+      if (driveToken) {
+        localStorage.setItem('dokuhero_drive_token', driveToken);
+      }
+      window.history.replaceState({}, '', `${window.location.pathname}`);
+      window.setTimeout(() => {
+        void fetchUserMe();
+      }, 0);
+    } else if (driveStatus === 'error') {
+      window.history.replaceState({}, '', `${window.location.pathname}`);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const disconnectGmail = () => {
+    localStorage.removeItem(LS_GMAIL);
+    localStorage.removeItem(LS_GMAIL_REFRESH);
+    setGmailConnected(false);
+  };
+
+  async function activateStorageProvider(provider) {
+    setActivatingProvider(provider);
+    try {
+      await api.post('/api/user/storage-provider', { provider });
+      setStorageProvider(provider);
+      localStorage.setItem(LS_STORAGE_PROVIDER, provider);
+      setToast({ type: 'success', text: 'Speicher wurde gewechselt.' });
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Speicher konnte nicht gewechselt werden.';
+      setToast({ type: 'error', text: msg });
+    } finally {
+      setActivatingProvider(null);
+    }
+  }
+
+  async function openDriveOAuth() {
+    try {
+      const response = await api.post('/api/auth/drive-url');
+      const authUrl = response?.data?.authUrl;
+      if (!authUrl) {
+        throw new Error('Drive-Verbindung konnte nicht gestartet werden.');
+      }
+      window.location.href = authUrl;
+    } catch (error) {
+      const msg =
+        error?.response?.data?.error || error?.message || 'Google Drive konnte nicht verbunden werden.';
+      setToast({ type: 'error', text: msg });
+    }
+  }
+
+  const cardBase = {
+    background: '#fff',
+    border: '1px solid #e5e7eb',
+    borderRadius: '12px',
+    padding: '16px',
+    marginBottom: '10px',
+  };
+
+  return (
+    <main
+      style={{
+        minHeight: '100vh',
+        backgroundColor: '#f3f4f6',
+        color: '#111827',
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      }}
+    >
+      {toast ? (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            top: '16px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 200,
+            maxWidth: 'min(420px, calc(100vw - 32px))',
+            padding: '12px 16px',
+            borderRadius: '10px',
+            fontSize: '14px',
+            fontWeight: 500,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+            background: toast.type === 'success' ? '#ecfdf5' : '#fef2f2',
+            color: toast.type === 'success' ? '#047857' : '#b91c1c',
+            border: `1px solid ${toast.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
+          }}
+        >
+          {toast.text}
+        </div>
+      ) : null}
+
+      <header
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
+          backgroundColor: '#ffffff',
+          borderBottom: '1px solid #e5e7eb',
+        }}
+      >
+        <div
+          style={{
+            maxWidth: '480px',
+            margin: '0 auto',
+            padding: '14px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+            <IconSettingsHeader />
+            <h1
+              style={{
+                margin: 0,
+                fontSize: '17px',
+                fontWeight: 600,
+                color: '#111827',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Einstellungen
+            </h1>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.removeItem('dokuhero_token');
+              localStorage.removeItem('dokuhero_refresh_token');
+              localStorage.removeItem('dokuhero_drive_connected');
+              localStorage.removeItem('dokuhero_drive_token');
+              localStorage.removeItem(LS_STORAGE_PROVIDER);
+              localStorage.removeItem(LS_GMAIL);
+              localStorage.removeItem(LS_GMAIL_REFRESH);
+              window.location.href = '/';
+            }}
+            aria-label="Abmelden"
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb',
+              background: 'transparent',
+              padding: 0,
+              display: 'grid',
+              placeItems: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <IconLogoutDoor />
+          </button>
+        </div>
+      </header>
+
+      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '16px 16px 80px' }}>
+        {sectionTitle('VERBUNDENE KONTEN')}
+
+        <div style={cardBase}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <IconGmailCard />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>Gmail</p>
+              {gmailConnected ? (
+                <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>Verbunden ✓</span>
+                  <button
+                    type="button"
+                    onClick={disconnectGmail}
+                    style={{
+                      fontFamily: 'inherit',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      color: '#374151',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      padding: '6px 12px',
+                      background: '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Trennen
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = '/api/auth/gmail';
+                  }}
+                  style={{
+                    marginTop: '12px',
+                    fontFamily: 'inherit',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px 16px',
+                    background: '#6366f1',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Verbinden
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div style={cardBase}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+              <IconOutlook />
+              <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>Outlook</p>
+            </div>
+            {badgeSoon()}
+          </div>
+        </div>
+
+        <div style={cardBase}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+              <IconImapMail />
+              <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>Anderes E-Mail Konto</p>
+            </div>
+            {badgeSoon()}
+          </div>
+        </div>
+
+        <div style={{ height: '8px' }} />
+
+        {sectionTitle('SPEICHER')}
+
+        <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#6b7280', lineHeight: 1.45 }}>
+          Es ist immer genau ein Speicher aktiv. Du kannst jederzeit wechseln.
+        </p>
+
+        {meLoading ? (
+          <p style={{ margin: 0, fontSize: '14px', color: '#9ca3af' }}>Lade Einstellungen…</p>
+        ) : (
+          <>
+            {/* Hetzner Tresor */}
+            <div
+              style={{
+                ...cardBase,
+                border:
+                  storageProvider === 'hetzner' ? '2px solid #6366f1' : '1px solid #e5e7eb',
+                marginBottom: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                <IconServer />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>Hetzner Tresor</p>
+                    {storageProvider === 'hetzner' ? (
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: '#15803d',
+                          background: '#dcfce7',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        Aktiv ✓
+                      </span>
+                    ) : null}
+                  </div>
+                  <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                    EU-Hosting über Object Storage — kein Google-Konto nötig.
+                  </p>
+                  {storageProvider !== 'hetzner' ? (
+                    <button
+                      type="button"
+                      disabled={activatingProvider === 'hetzner'}
+                      onClick={() => activateStorageProvider('hetzner')}
+                      style={{
+                        marginTop: '12px',
+                        fontFamily: 'inherit',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '8px 16px',
+                        background: activatingProvider === 'hetzner' ? '#a5b4fc' : '#6366f1',
+                        cursor: activatingProvider === 'hetzner' ? 'default' : 'pointer',
+                      }}
+                    >
+                      {activatingProvider === 'hetzner' ? 'Wird aktiviert…' : 'Aktivieren'}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            {/* Google Drive */}
+            <div
+              style={{
+                ...cardBase,
+                border:
+                  storageProvider === 'google_drive' ? '2px solid #6366f1' : '1px solid #e5e7eb',
+                marginBottom: '10px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                <IconGoogleDrive />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>Google Drive</p>
+                    {storageProvider === 'google_drive' ? (
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: '#15803d',
+                          background: '#dcfce7',
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        Aktiv ✓
+                      </span>
+                    ) : null}
+                  </div>
+                  <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#9ca3af' }}>
+                    Dokumente in deinem Google Drive unter „DokuHero“.
+                  </p>
+                  {storageProvider !== 'google_drive' ? (
+                    driveConnected ? (
+                      <button
+                        type="button"
+                        disabled={activatingProvider === 'google_drive'}
+                        onClick={() => activateStorageProvider('google_drive')}
+                        style={{
+                          marginTop: '12px',
+                          fontFamily: 'inherit',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '8px 16px',
+                          background: activatingProvider === 'google_drive' ? '#a5b4fc' : '#6366f1',
+                          cursor: activatingProvider === 'google_drive' ? 'default' : 'pointer',
+                        }}
+                      >
+                        {activatingProvider === 'google_drive' ? 'Wird aktiviert…' : 'Aktivieren'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={openDriveOAuth}
+                        style={{
+                          marginTop: '12px',
+                          fontFamily: 'inherit',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          color: '#6366f1',
+                          border: '1px solid #6366f1',
+                          borderRadius: '8px',
+                          padding: '8px 16px',
+                          background: '#fff',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Verbinden
+                      </button>
+                    )
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ ...cardBase, marginBottom: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '14px', color: '#6b7280' }}>OneDrive</span>
+                {badgeSoon()}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      <BottomNav />
+    </main>
+  );
+}
+

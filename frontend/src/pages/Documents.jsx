@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import api from '../services/api';
 
+const LS_STORAGE_PROVIDER = 'dokuhero_storage_provider';
+
 function IconHeaderDocuments({ size = 24, color = '#6366f1' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -122,8 +124,9 @@ async function openAuthenticatedDocumentDownload(docId) {
   throw new Error(msg);
 }
 
-function openFolderOrExternal(navigate, folder, subRow) {
-  const storageProvider = localStorage.getItem('dokuhero_storage_provider') || 'google_drive';
+function openFolderOrExternal(navigate, folder, subRow, storageProviderFromPage) {
+  const storageProvider =
+    storageProviderFromPage || localStorage.getItem(LS_STORAGE_PROVIDER) || 'google_drive';
   if (storageProvider === 'hetzner') {
     if (subRow?.name && subRow.name !== HETZNER_DIRECT_SUBLABEL) {
       navigate(`/documents/folder/${encodeURIComponent(folder.name)}/${encodeURIComponent(subRow.name)}`);
@@ -266,6 +269,7 @@ function Documents() {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [storageProvider, setStorageProvider] = useState(() => localStorage.getItem(LS_STORAGE_PROVIDER));
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -309,7 +313,26 @@ function Documents() {
     let cancelled = false;
 
     (async () => {
+      setLoading(true);
+      setError(null);
       try {
+        try {
+          const { data } = await api.get('/api/user/me');
+          if (!cancelled && data?.success && data.user) {
+            const sp = data.user.storage_provider || null;
+            if (sp) {
+              localStorage.setItem(LS_STORAGE_PROVIDER, sp);
+            } else {
+              localStorage.removeItem(LS_STORAGE_PROVIDER);
+            }
+            setStorageProvider(sp);
+          }
+        } catch {
+          if (!cancelled) {
+            setStorageProvider(localStorage.getItem(LS_STORAGE_PROVIDER));
+          }
+        }
+
         const response = await api.get('/api/documents', {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -386,6 +409,7 @@ function Documents() {
             onClick={() => {
               localStorage.removeItem('dokuhero_token');
               localStorage.removeItem('dokuhero_refresh_token');
+              localStorage.removeItem(LS_STORAGE_PROVIDER);
               localStorage.removeItem('gmail_token');
               localStorage.removeItem('gmail_refresh_token');
               window.location.href = '/';
@@ -653,7 +677,7 @@ function Documents() {
                               <button
                                 key={sub.id || sub.name}
                                 type="button"
-                                onClick={() => openFolderOrExternal(navigate, folder, sub)}
+                                onClick={() => openFolderOrExternal(navigate, folder, sub, storageProvider)}
                                 style={{
                                   display: 'flex',
                                   alignItems: 'center',
@@ -726,7 +750,7 @@ function Documents() {
                       <button
                         key={folderKey}
                         type="button"
-                        onClick={() => openFolderOrExternal(navigate, folder, null)}
+                        onClick={() => openFolderOrExternal(navigate, folder, null, storageProvider)}
                         style={{
                           display: 'flex',
                           alignItems: 'center',

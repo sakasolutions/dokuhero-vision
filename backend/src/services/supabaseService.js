@@ -11,7 +11,18 @@ function getSupabase() {
     if (!url || !key) {
       throw new Error('SUPABASE_URL und SUPABASE_SERVICE_KEY müssen gesetzt sein.');
     }
-    _supabase = createClient(url, key);
+    _supabase = createClient(url, key, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+      global: {
+        headers: {
+          Authorization: `Bearer ${key}`,
+        },
+      },
+    });
+    console.log('[Supabase] Client initialisiert, URL:', url?.substring(0, 30), 'Key prefix:', key?.substring(0, 10));
   }
   return _supabase;
 }
@@ -195,6 +206,8 @@ async function getUser(userId) {
     .select('id, email, name, avatar_url, storage_provider, drive_access_token, drive_refresh_token, updated_at')
     .eq('id', userId)
     .single();
+
+  console.log('[getUser] data:', data, 'error:', error?.message, 'code:', error?.code);
 
   if (error) return null;
   return data;
