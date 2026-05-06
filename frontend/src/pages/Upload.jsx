@@ -497,12 +497,8 @@ function Upload() {
         const me = await api.get('/api/user/me', {
           headers: { Authorization: `Bearer ${activeToken}` },
         });
-        const provider = me?.data?.user?.storage_provider || null;
-        if (provider) {
-          localStorage.setItem('dokuhero_storage_provider', provider);
-        } else {
-          navigate('/onboarding');
-        }
+        const provider = me?.data?.user?.storage_provider || 'hetzner';
+        localStorage.setItem('dokuhero_storage_provider', provider);
       } catch {
         // Wenn Userdaten nicht geladen werden können, im Upload bleiben.
       }
