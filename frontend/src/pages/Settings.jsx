@@ -309,17 +309,18 @@ export default function Settings() {
 
   const cardBase = {
     background: '#fff',
-    border: '1px solid #e5e7eb',
-    borderRadius: '12px',
+    border: '1px solid rgba(17,24,39,0.10)',
+    borderRadius: '18px',
     padding: '16px',
     marginBottom: '10px',
+    boxShadow: '0 10px 26px rgba(17,24,39,0.06)',
   };
 
   return (
     <main
       style={{
         minHeight: '100vh',
-        backgroundColor: '#f3f4f6',
+        backgroundColor: 'transparent',
         color: '#111827',
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
@@ -353,8 +354,9 @@ export default function Settings() {
           position: 'sticky',
           top: 0,
           zIndex: 10,
-          backgroundColor: '#ffffff',
-          borderBottom: '1px solid #e5e7eb',
+          backgroundColor: 'rgba(255,255,255,0.82)',
+          borderBottom: '1px solid rgba(17,24,39,0.08)',
+          backdropFilter: 'blur(10px)',
         }}
       >
         <div
@@ -397,9 +399,9 @@ export default function Settings() {
             style={{
               width: '36px',
               height: '36px',
-              borderRadius: '8px',
-              border: '1px solid #e5e7eb',
-              background: 'transparent',
+              borderRadius: '10px',
+              border: '1px solid rgba(17,24,39,0.10)',
+              background: 'rgba(255,255,255,0.6)',
               padding: 0,
               display: 'grid',
               placeItems: 'center',
@@ -431,8 +433,8 @@ export default function Settings() {
                       fontSize: '13px',
                       fontWeight: 500,
                       color: '#374151',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
+                      border: '1px solid rgba(17,24,39,0.10)',
+                      borderRadius: '10px',
                       padding: '6px 12px',
                       background: '#fff',
                       cursor: 'pointer',

@@ -364,7 +364,7 @@ function Documents() {
     <main
       style={{
         minHeight: '100vh',
-        backgroundColor: '#f3f4f6',
+        backgroundColor: 'transparent',
         color: '#111827',
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
@@ -374,8 +374,9 @@ function Documents() {
           position: 'sticky',
           top: 0,
           zIndex: 10,
-          backgroundColor: '#ffffff',
-          borderBottom: '1px solid #e5e7eb',
+          backgroundColor: 'rgba(255,255,255,0.82)',
+          borderBottom: '1px solid rgba(17,24,39,0.08)',
+          backdropFilter: 'blur(10px)',
         }}
       >
         <div
@@ -419,9 +420,9 @@ function Documents() {
             style={{
               width: '36px',
               height: '36px',
-              borderRadius: '8px',
-              border: '1px solid #e5e7eb',
-              background: 'transparent',
+              borderRadius: '10px',
+              border: '1px solid rgba(17,24,39,0.10)',
+              background: 'rgba(255,255,255,0.6)',
               padding: 0,
               display: 'grid',
               placeItems: 'center',
@@ -449,7 +450,7 @@ function Documents() {
                 width: '32px',
                 height: '32px',
                 borderRadius: '999px',
-                border: '3px solid #e5e7eb',
+                border: '3px solid rgba(17,24,39,0.10)',
                 borderTopColor: '#6366f1',
                 animation: 'documentsSpin 0.8s linear infinite',
                 display: 'inline-block',
@@ -485,13 +486,15 @@ function Documents() {
                 maxWidth: '280px',
                 height: '48px',
                 border: 'none',
-                borderRadius: '10px',
-                background: '#6366f1',
+                borderRadius: '12px',
+                background:
+                  'linear-gradient(135deg, rgba(99,102,241,1) 0%, rgba(79,70,229,1) 55%, rgba(67,56,202,1) 100%)',
                 color: '#fff',
                 fontWeight: 600,
                 fontSize: '15px',
                 cursor: 'pointer',
                 fontFamily: 'inherit',
+                boxShadow: '0 16px 36px rgba(99,102,241,0.22)',
               }}
             >
               Scanne dein erstes Dokument
@@ -504,11 +507,12 @@ function Documents() {
             <section
               style={{
                 background: '#fff',
-                border: '1px solid #e5e7eb',
-                borderRadius: '12px',
+                border: '1px solid rgba(17,24,39,0.10)',
+                borderRadius: '18px',
                 padding: '16px',
                 margin: '16px',
                 marginBottom: '8px',
+                boxShadow: '0 10px 26px rgba(17,24,39,0.06)',
               }}
             >
               <div
@@ -531,9 +535,10 @@ function Documents() {
                   alignItems: 'center',
                   gap: '8px',
                   background: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '12px',
+                  border: '1px solid rgba(17,24,39,0.10)',
+                  borderRadius: '14px',
                   padding: '10px 14px',
+                  boxShadow: '0 8px 20px rgba(17,24,39,0.05)',
                 }}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
