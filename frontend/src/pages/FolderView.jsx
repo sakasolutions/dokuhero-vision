@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import BottomNav from '../components/BottomNav';
 import api from '../services/api';
+import { ensureSessionOrRedirect } from '../utils/session';
 
 function IconChevronLeft({ size = 20, color = '#6366f1' }) {
   return (
@@ -33,9 +34,12 @@ function formatDocDate(iso) {
 async function openDownload(docId) {
   const token = localStorage.getItem('dokuhero_token');
   const path = `/api/documents/${encodeURIComponent(docId)}/download`;
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(path, {
     method: 'GET',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers,
+    credentials: 'include',
     redirect: 'manual',
   });
 
@@ -78,9 +82,8 @@ export default function FolderView() {
   const [deletingId, setDeletingId] = useState(null);
 
   const load = useCallback(async () => {
-    const token = localStorage.getItem('dokuhero_token');
-    if (!token) {
-      navigate('/');
+    const ok = await ensureSessionOrRedirect(navigate);
+    if (!ok) {
       return;
     }
 
@@ -109,7 +112,10 @@ export default function FolderView() {
   }, [category, subcategory, navigate]);
 
   useEffect(() => {
-    void load();
+    const t = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => window.clearTimeout(t);
   }, [load]);
 
   const title = subcategory ? `${category} · ${subcategory}` : category;

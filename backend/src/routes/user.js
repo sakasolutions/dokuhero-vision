@@ -5,6 +5,20 @@ const supabaseService = require('../services/supabaseService');
 
 const router = express.Router();
 
+/** Nur für API-Responses — keine OAuth-Secrets ans Frontend. */
+function userMePublic(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    avatar_url: user.avatar_url,
+    storage_provider: user.storage_provider,
+    updated_at: user.updated_at,
+    drive_linked: !!(user.drive_access_token || user.drive_refresh_token),
+  };
+}
+
 // POST /api/user/storage-provider
 router.post('/storage-provider', requireAuth, async (req, res) => {
   try {
@@ -29,9 +43,8 @@ router.get('/me', requireAuth, async (req, res) => {
     if (!req.userId) {
       return res.status(400).json({ error: 'User-ID fehlt' });
     }
-    console.log('[user/me] userId:', req.userId);
     const user = await supabaseService.getUser(req.userId);
-    return res.json({ success: true, user });
+    return res.json({ success: true, user: userMePublic(user) });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
   }

@@ -27,12 +27,14 @@ function getSupabase() {
         },
       },
     });
-    console.log(
-      '[Supabase] Client initialisiert, URL:',
-      typeof url === 'string' ? url.substring(0, 30) : '',
-      'Key prefix:',
-      typeof key === 'string' ? key.substring(0, 10) : ''
-    );
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(
+        '[Supabase] Client initialisiert, URL:',
+        typeof url === 'string' ? url.substring(0, 30) : '',
+        'Key prefix:',
+        typeof key === 'string' ? key.substring(0, 10) : ''
+      );
+    }
   }
   return _supabase;
 }
@@ -217,7 +219,17 @@ async function getUser(userId) {
     .eq('id', userId)
     .single();
 
-  console.log('[getUser] data:', data, 'error:', error && error.message, 'code:', error && error.code);
+  if (process.env.NODE_ENV !== 'production') {
+    const safe =
+      data &&
+      ({
+        id: data.id,
+        email: data.email,
+        storage_provider: data.storage_provider,
+        drive_linked: !!(data.drive_access_token || data.drive_refresh_token),
+      });
+    console.log('[getUser]', { data: safe, error: error?.message, code: error?.code });
+  }
 
   if (error) return null;
   return data;

@@ -5,6 +5,7 @@ import 'react-image-crop/dist/ReactCrop.css';
 
 import BottomNav from '../components/BottomNav';
 import api from '../services/api';
+import { clearClientSession } from '../utils/session';
 
 function formatEuroDE(betrag) {
   if (betrag == null || betrag === '') return null;
@@ -146,7 +147,7 @@ function IconLogoutDoor() {
 
 function Upload() {
   const navigate = useNavigate();
-  const [token, setToken] = useState('');
+  const [sessionReady, setSessionReady] = useState(false);
   const [pages, setPages] = useState([]);
   const [status, setStatus] = useState('idle');
   const [result, setResult] = useState(null);
@@ -287,7 +288,7 @@ function Upload() {
   };
 
   const handleUpload = async (forceUpload = false) => {
-    if (pages.length === 0 || !token) {
+    if (pages.length === 0 || !sessionReady) {
       return;
     }
 
@@ -301,7 +302,7 @@ function Upload() {
     let step2Timer;
     let step3Timer;
 
-    const uploadDocument = async (accessToken) => {
+    const uploadDocument = async () => {
       const formData = new FormData();
       if (pages.length === 1) {
         formData.append('document', pages[0].file);
@@ -335,31 +336,27 @@ function Upload() {
       return api.post('/api/documents/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${accessToken}`,
         },
       });
     };
 
     const refreshAccessToken = async () => {
       const storedRefreshToken = localStorage.getItem('dokuhero_refresh_token');
-      if (!storedRefreshToken) {
-        navigate('/');
-        throw new Error('No refresh token available');
-      }
-
-      const response = await api.post('/api/auth/refresh', {
-        refresh_token: storedRefreshToken,
-      });
+      const response = await api.post(
+        '/api/auth/refresh',
+        storedRefreshToken ? { refresh_token: storedRefreshToken } : {},
+        { withCredentials: true }
+      );
 
       const newToken = response?.data?.access_token;
-      if (!newToken) {
+      if (newToken) {
+        localStorage.setItem('dokuhero_token', newToken);
+      }
+
+      if (!response?.data?.success) {
         navigate('/');
         throw new Error('Refresh failed');
       }
-
-      localStorage.setItem('dokuhero_token', newToken);
-      setToken(newToken);
-      return newToken;
     };
 
     step2Timer = window.setTimeout(() => {
@@ -367,7 +364,7 @@ function Upload() {
     }, 800);
 
     try {
-      const response = await uploadDocument(token);
+      const response = await uploadDocument();
       setProgressStep('step2_done_step3_active');
       step3Timer = window.setTimeout(() => {
         setProgressStep('step3_done');
@@ -387,8 +384,8 @@ function Upload() {
       }
 
       try {
-        const refreshedToken = await refreshAccessToken();
-        const retryResponse = await uploadDocument(refreshedToken);
+        await refreshAccessToken();
+        const retryResponse = await uploadDocument();
         setProgressStep('step2_done_step3_active');
         step3Timer = window.setTimeout(() => {
           setProgressStep('step3_done');
@@ -468,43 +465,48 @@ function Upload() {
 
     const bootstrap = async () => {
       const currentUrl = new URL(window.location.href);
-      const tokenFromUrl = currentUrl.searchParams.get('access_token');
-      const refreshTokenFromUrl = currentUrl.searchParams.get('refresh_token');
 
-      if (tokenFromUrl || refreshTokenFromUrl) {
-        if (tokenFromUrl) {
-          localStorage.setItem('dokuhero_token', tokenFromUrl);
-        }
-        if (refreshTokenFromUrl) {
-          localStorage.setItem('dokuhero_refresh_token', refreshTokenFromUrl);
-        }
+      if (currentUrl.searchParams.has('access_token') || currentUrl.searchParams.has('refresh_token')) {
         currentUrl.searchParams.delete('access_token');
         currentUrl.searchParams.delete('refresh_token');
         window.history.replaceState({}, document.title, currentUrl.toString());
       }
 
-      const activeToken = tokenFromUrl || localStorage.getItem('dokuhero_token');
-      if (!activeToken) {
-        navigate('/');
-        return;
-      }
-
-      if (!cancelled) {
-        setToken(activeToken);
+      const exchangeCode = currentUrl.searchParams.get('login_exchange');
+      if (exchangeCode) {
+        try {
+          await api.post('/api/auth/exchange-login', { code: exchangeCode }, { withCredentials: true });
+          localStorage.removeItem('dokuhero_token');
+          localStorage.removeItem('dokuhero_refresh_token');
+          localStorage.removeItem('dokuhero_token_expiry');
+        } catch {
+          if (!cancelled) navigate('/');
+          return;
+        }
+        currentUrl.searchParams.delete('login_exchange');
+        window.history.replaceState({}, document.title, currentUrl.toString());
       }
 
       try {
+        const lsToken = localStorage.getItem('dokuhero_token');
         const me = await api.get('/api/user/me', {
-          headers: { Authorization: `Bearer ${activeToken}` },
+          withCredentials: true,
+          headers: lsToken ? { Authorization: `Bearer ${lsToken}` } : {},
         });
+        if (cancelled) return;
+        if (me?.status !== 200 || !me.data?.success) {
+          navigate('/');
+          return;
+        }
         const provider = me?.data?.user?.storage_provider || 'hetzner';
         localStorage.setItem('dokuhero_storage_provider', provider);
+        setSessionReady(true);
       } catch {
-        // Wenn Userdaten nicht geladen werden können, im Upload bleiben.
+        if (!cancelled) navigate('/');
       }
     };
 
-    bootstrap();
+    void bootstrap();
 
     return () => {
       cancelled = true;
@@ -536,8 +538,9 @@ function Upload() {
           position: 'sticky',
           top: 0,
           zIndex: 10,
-          backgroundColor: '#ffffff',
-          borderBottom: '1px solid #e5e7eb',
+          backgroundColor: 'rgba(255,255,255,0.82)',
+          borderBottom: '1px solid rgba(17,24,39,0.08)',
+          backdropFilter: 'blur(10px)',
         }}
       >
         <div
@@ -555,20 +558,19 @@ function Upload() {
           <button
             type="button"
             className="logout-header-button"
-            onClick={() => {
-              localStorage.removeItem('dokuhero_token');
-              localStorage.removeItem('dokuhero_refresh_token');
+            onClick={async () => {
               localStorage.removeItem('gmail_token');
               localStorage.removeItem('gmail_refresh_token');
+              await clearClientSession();
               window.location.href = '/';
             }}
             aria-label="Abmelden"
             style={{
               width: '36px',
               height: '36px',
-              borderRadius: '8px',
-              border: '1px solid #e5e7eb',
-              background: 'transparent',
+              borderRadius: '10px',
+              border: '1px solid rgba(17,24,39,0.10)',
+              background: 'rgba(255,255,255,0.6)',
               padding: 0,
               display: 'grid',
               placeItems: 'center',
@@ -585,12 +587,12 @@ function Upload() {
           <>
             <section
               style={{
-                border: '1px solid #e5e7eb',
-                borderRadius: '12px',
+                border: '1px solid rgba(17,24,39,0.10)',
+                borderRadius: '18px',
                 padding: '24px',
                 backgroundColor: '#ffffff',
                 textAlign: 'center',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                boxShadow: '0 12px 30px rgba(17,24,39,0.08)',
               }}
             >
               {showCropper && imgSrc ? (
@@ -821,7 +823,7 @@ function Upload() {
                     <IconPlus />
                     <span>Weitere Seite hinzufügen</span>
                   </button>
-                  <div style={{ height: '1px', backgroundColor: '#e5e7eb', margin: '16px 0' }} />
+                  <div style={{ height: '1px', backgroundColor: 'rgba(17,24,39,0.08)', margin: '16px 0' }} />
                   {status !== 'uploading' && status !== 'error' && (
                     <button
                       type="button"
@@ -1258,25 +1260,25 @@ function Upload() {
 const styles = {
   page: {
     minHeight: '100vh',
-    backgroundColor: '#f3f4f6',
+    backgroundColor: 'transparent',
     color: '#111827',
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   },
   uploadingCard: {
     backgroundColor: '#fff',
-    borderRadius: '16px',
-    border: '1px solid #e5e7eb',
+    borderRadius: '18px',
+    border: '1px solid rgba(17,24,39,0.10)',
     padding: '24px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    boxShadow: '0 12px 30px rgba(17,24,39,0.08)',
   },
   errorCard: {
     marginTop: '16px',
     backgroundColor: '#fff',
-    border: '1px solid #e5e7eb',
-    borderRadius: '16px',
+    border: '1px solid rgba(17,24,39,0.10)',
+    borderRadius: '18px',
     padding: '20px',
     textAlign: 'center',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    boxShadow: '0 12px 30px rgba(17,24,39,0.08)',
   },
   stateTitle: {
     margin: '0 0 8px',
@@ -1290,9 +1292,9 @@ const styles = {
     fontSize: '14px',
   },
   infoCard: {
-    backgroundColor: '#f9fafb',
-    border: '1px solid #e5e7eb',
-    borderRadius: '12px',
+    backgroundColor: 'rgba(17,24,39,0.02)',
+    border: '1px solid rgba(17,24,39,0.08)',
+    borderRadius: '14px',
     padding: '16px',
     marginTop: '20px',
     textAlign: 'left',
@@ -1311,7 +1313,7 @@ const styles = {
     gap: '12px',
     minWidth: 0,
     padding: '8px 0',
-    borderBottom: '1px solid #f3f4f6',
+    borderBottom: '1px solid rgba(17,24,39,0.06)',
   },
   infoRowLast: {
     margin: 0,

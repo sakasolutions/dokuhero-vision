@@ -1,7 +1,10 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: '',
+  // Wrapper-ready: in Capacitor/Apps ist die Origin NICHT euer Backend.
+  // Default bleibt wie bisher (same-origin), wenn keine Env gesetzt ist.
+  baseURL: import.meta.env.VITE_API_BASE_URL || '',
+  withCredentials: true,
 });
 
 api.interceptors.request.use((config) => {

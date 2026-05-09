@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
+import { probeBackendSession } from '../utils/session';
+
 function GoogleIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -36,10 +38,19 @@ function Login() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const existingToken = localStorage.getItem('dokuhero_token');
-    if (existingToken) {
-      navigate('/upload');
-    }
+    let cancelled = false;
+    (async () => {
+      if (localStorage.getItem('dokuhero_token')) {
+        navigate('/upload');
+        return;
+      }
+      if (await probeBackendSession()) {
+        if (!cancelled) navigate('/upload');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [navigate]);
 
   const handleGoogleLogin = () => {
@@ -143,7 +154,7 @@ direkt in dein Google Drive.`}
           <span>Mit Google anmelden</span>
         </button>
 
-        <div style={{ height: '1px', backgroundColor: '#e5e7eb', margin: '24px 0' }} />
+        <div style={{ height: '1px', backgroundColor: 'rgba(17,24,39,0.08)', margin: '24px 0' }} />
 
         <div style={{ display: 'grid', gap: '12px' }}>
           {[
@@ -194,9 +205,9 @@ direkt in dein Google Drive.`}
         .login-google-button {
           width: 100%;
           height: 52px;
-          border: none;
-          border-radius: 10px;
-          background: #6366f1;
+          border: 1px solid rgba(17,24,39,0.10);
+          border-radius: 12px;
+          background: linear-gradient(135deg, rgba(99,102,241,1) 0%, rgba(79,70,229,1) 55%, rgba(67,56,202,1) 100%);
           color: #fff;
           font-size: 15px;
           font-weight: 600;
@@ -206,11 +217,16 @@ direkt in dein Google Drive.`}
           justify-content: center;
           gap: 10px;
           transition: all 0.15s ease;
+          box-shadow: 0 14px 34px rgba(99,102,241,0.22);
         }
         .login-google-button:hover {
-          background: #4f46e5;
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(99,102,241,0.4);
+          box-shadow: 0 18px 44px rgba(99,102,241,0.26);
+          filter: brightness(1.02);
+        }
+        .login-google-button:active {
+          transform: translateY(0px) scale(0.99);
+          box-shadow: 0 10px 22px rgba(99,102,241,0.18);
         }
         .login-footer-link {
           color: #9ca3af;
@@ -231,7 +247,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: 'transparent',
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   },
   content: {
@@ -243,14 +259,16 @@ const styles = {
   logoBox: {
     width: '40px',
     height: '40px',
-    borderRadius: '10px',
-    backgroundColor: '#6366f1',
+    borderRadius: '14px',
+    background:
+      'linear-gradient(135deg, rgba(99,102,241,1) 0%, rgba(79,70,229,1) 55%, rgba(67,56,202,1) 100%)',
     color: '#fff',
     display: 'grid',
     placeItems: 'center',
     fontSize: '20px',
     fontWeight: 700,
     lineHeight: 1,
+    boxShadow: '0 10px 24px rgba(99,102,241,0.25)',
   },
   logoText: {
     fontSize: '20px',
@@ -261,7 +279,7 @@ const styles = {
     width: '20px',
     height: '20px',
     borderRadius: '999px',
-    backgroundColor: '#eef2ff',
+    backgroundColor: 'rgba(99,102,241,0.12)',
     display: 'grid',
     placeItems: 'center',
     flexShrink: 0,
@@ -269,7 +287,7 @@ const styles = {
   stepNumber: {
     width: '18px',
     height: '18px',
-    background: '#eef2ff',
+    background: 'rgba(99,102,241,0.12)',
     borderRadius: '50%',
     flexShrink: 0,
     display: 'flex',

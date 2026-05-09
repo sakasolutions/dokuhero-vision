@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import BottomNav from '../components/BottomNav';
 import api from '../services/api';
+import { clearClientSession, ensureSessionOrRedirect } from '../utils/session';
 
 const LS_STORAGE_PROVIDER = 'dokuhero_storage_provider';
 
@@ -17,9 +18,6 @@ function getInitialSettingsToast() {
   }
   if (params.get('drive') === 'error') {
     return { type: 'error', text: 'Google Drive konnte nicht verbunden werden.' };
-  }
-  if (params.get('gmail_token')) {
-    return { type: 'success', text: 'Gmail erfolgreich verbunden!' };
   }
   if (params.get('gmail') === 'error') {
     return { type: 'error', text: 'Gmail konnte nicht verbunden werden.' };
@@ -163,7 +161,11 @@ export default function Settings() {
   const navigate = useNavigate();
   const [gmailConnected, setGmailConnected] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return !!localStorage.getItem(LS_GMAIL) || !!params.get('gmail_token');
+    return (
+      !!localStorage.getItem(LS_GMAIL) ||
+      !!params.get('gmail_exchange') ||
+      !!params.get('gmail_token')
+    );
   });
   const [driveConnected, setDriveConnected] = useState(false);
   const [storageProvider, setStorageProvider] = useState(null);
@@ -171,27 +173,18 @@ export default function Settings() {
   const [activatingProvider, setActivatingProvider] = useState(null);
   const [toast, setToast] = useState(() => getInitialSettingsToast());
 
-  useEffect(() => {
-    const token = localStorage.getItem('dokuhero_token');
-    if (!token) {
-      navigate('/');
-    }
-  }, [navigate]);
-
   async function fetchUserMe() {
-    const token = localStorage.getItem('dokuhero_token');
-    if (!token) return;
     setMeLoading(true);
     try {
-      const { data } = await api.get('/api/user/me');
+      const lsToken = localStorage.getItem('dokuhero_token');
+      const { data } = await api.get('/api/user/me', {
+        headers: lsToken ? { Authorization: `Bearer ${lsToken}` } : {},
+      });
       if (data?.success && data.user) {
         const sp = data.user.storage_provider || null;
         setStorageProvider(sp);
-        const linked = !!(data.user.drive_access_token || data.user.drive_refresh_token);
+        const linked = !!data.user.drive_linked;
         setDriveConnected(linked);
-        if (linked) {
-          localStorage.setItem('dokuhero_drive_connected', 'true');
-        }
         if (sp) {
           localStorage.setItem(LS_STORAGE_PROVIDER, sp);
         } else {
@@ -206,35 +199,63 @@ export default function Settings() {
   }
 
   useEffect(() => {
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      void fetchUserMe();
+      void (async () => {
+        const ok = await ensureSessionOrRedirect(navigate);
+        if (!ok || cancelled) return;
+        await fetchUserMe();
+      })();
     }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [navigate]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const gmailExchange = params.get('gmail_exchange');
     const gToken = params.get('gmail_token');
     const gRefresh = params.get('gmail_refresh');
     const gmailErr = params.get('gmail');
     const driveStatus = params.get('drive');
-    const driveToken = params.get('drive_token');
 
-    if (gToken) {
+    if (gmailExchange) {
+      void (async () => {
+        try {
+          const { data } = await api.post('/api/auth/exchange-gmail', { code: gmailExchange });
+          if (data?.success && data.gmail_access_token) {
+            localStorage.setItem(LS_GMAIL, data.gmail_access_token);
+            if (data.gmail_refresh_token) {
+              localStorage.setItem(LS_GMAIL_REFRESH, data.gmail_refresh_token);
+            }
+            setGmailConnected(true);
+            setToast({ type: 'success', text: 'Gmail erfolgreich verbunden!' });
+          } else {
+            setToast({ type: 'error', text: 'Gmail konnte nicht übernommen werden.' });
+          }
+        } catch {
+          setToast({ type: 'error', text: 'Gmail konnte nicht übernommen werden.' });
+        } finally {
+          window.history.replaceState({}, '', `${window.location.pathname}`);
+        }
+      })();
+    } else if (gToken) {
       localStorage.setItem(LS_GMAIL, gToken);
       if (gRefresh) {
         localStorage.setItem(LS_GMAIL_REFRESH, gRefresh);
       }
+      window.setTimeout(() => {
+        setGmailConnected(true);
+        setToast({ type: 'success', text: 'Gmail erfolgreich verbunden!' });
+      }, 0);
       window.history.replaceState({}, '', `${window.location.pathname}`);
     } else if (gmailErr === 'error') {
       window.history.replaceState({}, '', `${window.location.pathname}`);
     }
 
     if (driveStatus === 'connected') {
-      localStorage.setItem('dokuhero_drive_connected', 'true');
-      if (driveToken) {
-        localStorage.setItem('dokuhero_drive_token', driveToken);
-      }
       window.history.replaceState({}, '', `${window.location.pathname}`);
       window.setTimeout(() => {
         void fetchUserMe();
@@ -365,14 +386,11 @@ export default function Settings() {
           </div>
           <button
             type="button"
-            onClick={() => {
-              localStorage.removeItem('dokuhero_token');
-              localStorage.removeItem('dokuhero_refresh_token');
-              localStorage.removeItem('dokuhero_drive_connected');
-              localStorage.removeItem('dokuhero_drive_token');
+            onClick={async () => {
               localStorage.removeItem(LS_STORAGE_PROVIDER);
               localStorage.removeItem(LS_GMAIL);
               localStorage.removeItem(LS_GMAIL_REFRESH);
+              await clearClientSession();
               window.location.href = '/';
             }}
             aria-label="Abmelden"

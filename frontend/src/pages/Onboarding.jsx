@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import api from '../services/api';
+import { ensureSessionOrRedirect } from '../utils/session';
 
 function Logo() {
   return (
@@ -33,15 +34,16 @@ export default function Onboarding() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const token = localStorage.getItem('dokuhero_token');
-    if (!token) {
-      navigate('/');
-      return;
-    }
-    const cached = localStorage.getItem('dokuhero_storage_provider');
-    if (cached) {
-      navigate('/upload');
-    }
+    let cancelled = false;
+    (async () => {
+      const ok = await ensureSessionOrRedirect(navigate);
+      if (!ok || cancelled) return;
+      const cached = localStorage.getItem('dokuhero_storage_provider');
+      if (cached) navigate('/upload');
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [navigate]);
 
   const saveProvider = async (provider) => {

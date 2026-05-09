@@ -12,18 +12,22 @@ import Upload from './pages/Upload';
 
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Login />} />
-      <Route path="/upload" element={<Upload />} />
-      <Route path="/onboarding" element={<Onboarding />} />
-      <Route path="/documents/folder/:category/:subcategory" element={<FolderView />} />
-      <Route path="/documents/folder/:category" element={<FolderView />} />
-      <Route path="/documents" element={<Documents />} />
-      <Route path="/inbox" element={<Inbox />} />
-      <Route path="/settings" element={<Settings />} />
-      <Route path="/impressum" element={<Impressum />} />
-      <Route path="/datenschutz" element={<Datenschutz />} />
-    </Routes>
+    <div className="app-shell">
+      <div className="app-shell__viewport">
+        <Routes>
+          <Route path="/" element={<Login />} />
+          <Route path="/upload" element={<Upload />} />
+          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/documents/folder/:category/:subcategory" element={<FolderView />} />
+          <Route path="/documents/folder/:category" element={<FolderView />} />
+          <Route path="/documents" element={<Documents />} />
+          <Route path="/inbox" element={<Inbox />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/impressum" element={<Impressum />} />
+          <Route path="/datenschutz" element={<Datenschutz />} />
+        </Routes>
+      </div>
+    </div>
   );
 }
 

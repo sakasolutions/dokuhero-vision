@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import BottomNav from '../components/BottomNav';
 import api from '../services/api';
+import { clearClientSession, ensureSessionOrRedirect } from '../utils/session';
 
 const LS_GMAIL = 'gmail_token';
 
@@ -54,19 +55,17 @@ export default function Inbox() {
   const [processing, setProcessing] = useState({});
 
   useEffect(() => {
-    const token = localStorage.getItem('dokuhero_token');
-    if (!token) {
-      navigate('/');
-      return;
-    }
-
-    if (!hasGmail) {
-      return;
-    }
-    const gmailToken = localStorage.getItem(LS_GMAIL);
     let cancelled = false;
 
-    (async () => {
+    if (!hasGmail) {
+      return undefined;
+    }
+
+    void (async () => {
+      const ok = await ensureSessionOrRedirect(navigate);
+      if (!ok || cancelled) return;
+      const gmailToken = localStorage.getItem(LS_GMAIL);
+
       try {
         const response = await api.get('/api/gmail/inbox', {
           headers: { Authorization: `Bearer ${gmailToken}` },
@@ -167,11 +166,10 @@ export default function Inbox() {
           </div>
           <button
             type="button"
-            onClick={() => {
-              localStorage.removeItem('dokuhero_token');
-              localStorage.removeItem('dokuhero_refresh_token');
+            onClick={async () => {
               localStorage.removeItem(LS_GMAIL);
               localStorage.removeItem('gmail_refresh_token');
+              await clearClientSession();
               window.location.href = '/';
             }}
             aria-label="Abmelden"

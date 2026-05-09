@@ -4,6 +4,14 @@ const { google } = require('googleapis');
 
 const supabaseService = require('../services/supabaseService');
 const requireAuth = require('../middleware/auth');
+const loginExchangeStore = require('../services/loginExchangeStore');
+const gmailExchangeStore = require('../services/gmailExchangeStore');
+const {
+  sessionCookieBase,
+  ACCESS_COOKIE_MAX_AGE_MS,
+  REFRESH_COOKIE_MAX_AGE_MS,
+} = require('../config/sessionCookies');
+const { authRefreshLimiter, exchangeLoginLimiter } = require('../middleware/rateLimit');
 const { resolveGoogleIdentity } = require('../utils/userIdentity');
 
 const OAuth2Client = google.auth.OAuth2;
@@ -118,7 +126,7 @@ router.get('/google', (_req, res) => {
   res.redirect(authUrl);
 });
 
-/** Separater OAuth-Flow nur für Gmail (gmail.readonly). Callback legt Tokens in der Settings-URL ab. */
+/** Separater OAuth-Flow nur für Gmail (gmail.readonly). Callback → einmaliger Code, kein Token in der URL. */
 router.get('/gmail', (_req, res) => {
   if (!oauth2GmailClient || !gmailRedirectUri) {
     return res.status(500).json({
@@ -159,14 +167,12 @@ router.get('/gmail/callback', async (req, res) => {
       return res.redirect(`${frontendUrl}/settings?gmail=error`);
     }
 
-    const target = new URL(`${frontendUrl.replace(/\/$/, '')}/settings`);
-    target.searchParams.set('gmail', 'connected');
-    target.searchParams.set('gmail_token', tokens.access_token);
-    if (tokens.refresh_token) {
-      target.searchParams.set('gmail_refresh', tokens.refresh_token);
-    }
-
-    return res.redirect(target.toString());
+    const exchangeCode = gmailExchangeStore.put({
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token || null,
+    });
+    const base = `${frontendUrl.replace(/\/$/, '')}/settings`;
+    return res.redirect(`${base}?gmail_exchange=${encodeURIComponent(exchangeCode)}`);
   } catch {
     return res.redirect(`${frontendUrl}/settings?gmail=error`);
   }
@@ -225,10 +231,8 @@ router.get('/drive/callback', async (req, res) => {
     }
 
     await supabaseService.updateDriveTokens(userId, tokens);
-    const params = new URLSearchParams();
-    params.set('drive', 'connected');
-    params.set('drive_token', tokens.access_token);
-    return res.redirect(`${frontendUrl}/settings?${params.toString()}`);
+    const base = `${frontendUrl.replace(/\/$/, '')}/settings`;
+    return res.redirect(`${base}?drive=connected`);
   } catch (err) {
     console.error('[auth/drive/callback]', err?.message || err);
     return res.redirect(`${frontendUrl}/settings?drive=error`);
@@ -266,13 +270,13 @@ router.get('/callback', async (req, res) => {
       console.error('[auth/callback] Supabase upsertUser:', err?.message || err);
     }
 
-    const params = new URLSearchParams();
-    params.set('access_token', tokens.access_token);
-    if (tokens.refresh_token) {
-      params.set('refresh_token', tokens.refresh_token);
-    }
-    const redirectUrl = `${process.env.FRONTEND_URL}/upload?${params.toString()}`;
-    return res.redirect(redirectUrl);
+    const exchangeCode = loginExchangeStore.put({
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token || null,
+      expiry_date: tokens.expiry_date ?? null,
+    });
+    const uploadBase = `${String(process.env.FRONTEND_URL || '').replace(/\/$/, '')}/upload`;
+    return res.redirect(`${uploadBase}?login_exchange=${encodeURIComponent(exchangeCode)}`);
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -281,9 +285,55 @@ router.get('/callback', async (req, res) => {
   }
 });
 
-router.post('/refresh', async (req, res) => {
+router.post('/exchange-login', exchangeLoginLimiter, async (req, res) => {
   try {
-    const { refresh_token: refreshToken } = req.body || {};
+    const code = String(req.body?.code || '').trim();
+    const payload = loginExchangeStore.take(code);
+    if (!payload?.access_token) {
+      return res.status(400).json({ success: false, error: 'Ungültiger oder abgelaufener Code' });
+    }
+
+    const base = sessionCookieBase();
+    res.cookie('dh_access', payload.access_token, { ...base, maxAge: ACCESS_COOKIE_MAX_AGE_MS });
+    if (payload.refresh_token) {
+      res.cookie('dh_refresh', payload.refresh_token, { ...base, maxAge: REFRESH_COOKIE_MAX_AGE_MS });
+    }
+
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'exchange-login failed',
+    });
+  }
+});
+
+router.post('/exchange-gmail', exchangeLoginLimiter, async (req, res) => {
+  try {
+    const code = String(req.body?.code || '').trim();
+    const payload = gmailExchangeStore.take(code);
+    if (!payload?.access_token) {
+      return res.status(400).json({ success: false, error: 'Ungültiger oder abgelaufener Code' });
+    }
+
+    return res.json({
+      success: true,
+      gmail_access_token: payload.access_token,
+      gmail_refresh_token: payload.refresh_token || null,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'exchange-gmail failed',
+    });
+  }
+});
+
+router.post('/refresh', authRefreshLimiter, async (req, res) => {
+  try {
+    const bodyRt = req.body?.refresh_token != null ? String(req.body.refresh_token).trim() : '';
+    const cookieRt = req.cookies?.dh_refresh != null ? String(req.cookies.dh_refresh).trim() : '';
+    const refreshToken = bodyRt || cookieRt;
 
     if (!refreshToken) {
       return res.status(400).json({ success: false, error: 'Missing refresh_token' });
@@ -303,6 +353,17 @@ router.post('/refresh', async (req, res) => {
       return res.status(500).json({ success: false, error: 'Could not refresh access token' });
     }
 
+    const base = sessionCookieBase();
+    res.cookie('dh_access', newAccessToken, { ...base, maxAge: ACCESS_COOKIE_MAX_AGE_MS });
+
+    const usedCookieOnly = !bodyRt && !!cookieRt;
+    if (usedCookieOnly) {
+      return res.json({
+        success: true,
+        expiry_date: refreshClient.credentials?.expiry_date || null,
+      });
+    }
+
     return res.json({
       success: true,
       access_token: newAccessToken,
@@ -314,6 +375,13 @@ router.post('/refresh', async (req, res) => {
       error: error.message || 'Token refresh failed',
     });
   }
+});
+
+router.post('/session-clear', (_req, res) => {
+  const base = sessionCookieBase();
+  res.clearCookie('dh_access', { path: base.path });
+  res.clearCookie('dh_refresh', { path: base.path });
+  res.json({ success: true });
 });
 
 router.get('/logout', (_req, res) => {

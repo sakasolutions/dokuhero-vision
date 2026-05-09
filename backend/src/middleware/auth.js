@@ -2,6 +2,7 @@ const { google } = require('googleapis');
 
 const supabaseService = require('../services/supabaseService');
 const { resolveGoogleIdentity } = require('../utils/userIdentity');
+const { sessionCookieBase, ACCESS_COOKIE_MAX_AGE_MS } = require('../config/sessionCookies');
 
 /** Gleiche Logik wie auth-Routen: Drive-Consent nutzt oft …/drive/callback — Refresh muss dieselbe Client-Redirect-URI nutzen. */
 function resolveDriveOAuthRedirectUri() {
@@ -116,7 +117,9 @@ async function fetchAuthenticatedUser(accessToken) {
 
 async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
-  const token = authHeader?.replace('Bearer ', '').trim();
+  const headerToken = authHeader?.replace(/^Bearer\s+/i, '').trim();
+  const cookieAccess = req.cookies?.dh_access ? String(req.cookies.dh_access).trim() : '';
+  const token = headerToken || cookieAccess;
 
   if (!token) {
     return res.status(401).json({ error: 'Kein Token' });
@@ -128,7 +131,9 @@ async function requireAuth(req, res, next) {
     await resolveDriveTokenFromSupabase(req);
     return next();
   } catch (_err) {
-    const refreshToken = req.headers['x-refresh-token'];
+    const refreshHeader = req.headers['x-refresh-token'];
+    const cookieRefresh = req.cookies?.dh_refresh ? String(req.cookies.dh_refresh).trim() : '';
+    const refreshToken = refreshHeader ? String(refreshHeader).trim() : cookieRefresh;
 
     if (!refreshToken) {
       return res.status(401).json({ error: 'Token abgelaufen', code: 'TOKEN_EXPIRED' });
@@ -136,7 +141,7 @@ async function requireAuth(req, res, next) {
 
     try {
       const oauth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
-      oauth2Client.setCredentials({ refresh_token: String(refreshToken).trim() });
+      oauth2Client.setCredentials({ refresh_token: refreshToken });
 
       const { credentials } = await oauth2Client.refreshAccessToken();
       if (!credentials?.access_token) {
@@ -146,9 +151,15 @@ async function requireAuth(req, res, next) {
       req.accessToken = credentials.access_token;
       req.userId = await fetchAuthenticatedUser(credentials.access_token);
 
-      res.setHeader('x-new-token', credentials.access_token);
-      if (credentials.expiry_date) {
-        res.setHeader('x-new-expiry', String(credentials.expiry_date));
+      const base = sessionCookieBase();
+      res.cookie('dh_access', credentials.access_token, { ...base, maxAge: ACCESS_COOKIE_MAX_AGE_MS });
+
+      const usedCookieRefresh = !refreshHeader && !!cookieRefresh;
+      if (!usedCookieRefresh) {
+        res.setHeader('x-new-token', credentials.access_token);
+        if (credentials.expiry_date) {
+          res.setHeader('x-new-expiry', String(credentials.expiry_date));
+        }
       }
 
       await resolveDriveTokenFromSupabase(req);

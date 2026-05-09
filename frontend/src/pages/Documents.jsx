@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import BottomNav from '../components/BottomNav';
 import api from '../services/api';
+import { clearClientSession, ensureSessionOrRedirect } from '../utils/session';
 
 const LS_STORAGE_PROVIDER = 'dokuhero_storage_provider';
 
@@ -89,9 +90,12 @@ const HETZNER_DIRECT_SUBLABEL = '(ohne Anbieter)';
 async function openAuthenticatedDocumentDownload(docId) {
   const token = localStorage.getItem('dokuhero_token');
   const path = `/api/documents/${encodeURIComponent(docId)}/download`;
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(path, {
     method: 'GET',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers,
+    credentials: 'include',
     redirect: 'manual',
   });
 
@@ -284,7 +288,7 @@ function Documents() {
     try {
       const response = await api.get(`/api/documents/search?q=${encodeURIComponent(value.trim())}`);
       setSearchResults(response.data.documents || []);
-    } catch (_err) {
+    } catch {
       setSearchResults([]);
     } finally {
       setIsSearching(false);
@@ -304,20 +308,20 @@ function Documents() {
   const newestIso = useMemo(() => newestFolderModifiedIso(folderGroupsVisible), [folderGroupsVisible]);
 
   useEffect(() => {
-    const token = localStorage.getItem('dokuhero_token');
-    if (!token) {
-      navigate('/');
-      return;
-    }
-
     let cancelled = false;
 
     (async () => {
+      const ok = await ensureSessionOrRedirect(navigate);
+      if (!ok || cancelled) return;
+
       setLoading(true);
       setError(null);
       try {
         try {
-          const { data } = await api.get('/api/user/me');
+          const lsToken = localStorage.getItem('dokuhero_token');
+          const { data } = await api.get('/api/user/me', {
+            headers: lsToken ? { Authorization: `Bearer ${lsToken}` } : {},
+          });
           if (!cancelled && data?.success && data.user) {
             const sp = data.user.storage_provider || null;
             if (sp) {
@@ -333,9 +337,7 @@ function Documents() {
           }
         }
 
-        const response = await api.get('/api/documents', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await api.get('/api/documents');
         if (!cancelled) {
           setDocuments(response.data?.documents || []);
         }
@@ -406,12 +408,11 @@ function Documents() {
           <button
             type="button"
             className="logout-header-button"
-            onClick={() => {
-              localStorage.removeItem('dokuhero_token');
-              localStorage.removeItem('dokuhero_refresh_token');
+            onClick={async () => {
               localStorage.removeItem(LS_STORAGE_PROVIDER);
               localStorage.removeItem('gmail_token');
               localStorage.removeItem('gmail_refresh_token');
+              await clearClientSession();
               window.location.href = '/';
             }}
             aria-label="Abmelden"
