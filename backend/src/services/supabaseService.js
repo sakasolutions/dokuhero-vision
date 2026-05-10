@@ -146,16 +146,20 @@ async function getDocumentsByCategory(userId, category) {
 }
 
 async function getDocumentsByCategoryAndSubcategory(userId, category, subcategory) {
-  const { data, error } = await getSupabase()
-    .from('documents')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('category', category)
-    .eq('subcategory', subcategory)
-    .order('created_at', { ascending: false });
+  const q = String(subcategory || '').trim();
+  if (!q) return [];
 
-  if (error) throw error;
-  return data || [];
+  /** Gleicher Wert wie in der URL: oft S3-Segment (z. B. IHK-Ostwuerttemberg), während
+   * `documents.subcategory` den KI-Absender mit Leerzeichen speichern kann. */
+  const rows = await getDocumentsByCategory(userId, category);
+  return (rows || []).filter((d) => {
+    const dbSub = String(d.subcategory || '').trim();
+    if (dbSub === q) return true;
+    const path = String(d.storage_path || '');
+    const parts = path.split('/').filter(Boolean);
+    if (parts.length >= 4 && parts[2] === q) return true;
+    return false;
+  });
 }
 
 async function deleteDocument(id, userId) {
