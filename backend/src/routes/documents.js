@@ -434,8 +434,27 @@ router.post('/upload', requireAuth, (req, res) => {
         }
       }
 
-      // Nur eine Seite
-      return respondWithAnalysisAndStorage(req, res, files[0], combinedText, forceUpload);
+      // Nur eine Seite: kein PDF-Kit — Raster direkt als JPEG speichern (PDF unverändert)
+      const single = files[0];
+      const mimeLower = (single.mimetype || '').toLowerCase();
+      if (mimeLower === 'application/pdf') {
+        return respondWithAnalysisAndStorage(req, res, single, combinedText, forceUpload);
+      }
+
+      const { buffer: bufIn, mimeType: mtIn } = await bufferAndMimeForOcr(single.buffer, single.mimetype);
+      let uploadBuffer = bufIn;
+      if (mtIn === 'image/png') {
+        uploadBuffer = await sharp(bufIn).jpeg({ quality: 92 }).toBuffer();
+      }
+
+      const baseName = (single.originalname || 'document').replace(/\.[^.]+$/i, '') || 'document';
+      const primaryFile = {
+        buffer: uploadBuffer,
+        mimetype: 'image/jpeg',
+        originalname: `${baseName}.jpg`,
+        size: uploadBuffer.length,
+      };
+      return respondWithAnalysisAndStorage(req, res, primaryFile, combinedText, forceUpload);
     }
 
     if (docFile) {
