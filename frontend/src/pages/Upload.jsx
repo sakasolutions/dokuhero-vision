@@ -646,10 +646,10 @@ function Upload() {
                 <>
                   <div
                     style={{
-                      border: '2px dashed #d1d5db',
-                      borderRadius: '12px',
+                      border: '2px dashed rgba(17,24,39,0.12)',
+                      borderRadius: '16px',
                       padding: '36px 20px',
-                      backgroundColor: '#fafafa',
+                      backgroundColor: 'rgba(17,24,39,0.02)',
                       marginBottom: '20px',
                     }}
                   >
@@ -688,6 +688,17 @@ function Upload() {
                       />
                     </label>
                   </div>
+                  <p
+                    style={{
+                      margin: '14px 0 0',
+                      fontSize: '13px',
+                      color: '#6b7280',
+                      lineHeight: 1.5,
+                      textAlign: 'center',
+                    }}
+                  >
+                    Kamera für Fotos, Datei für PDF oder Bilder vom Gerät.
+                  </p>
                   <input
                     ref={cameraInputRef}
                     type="file"
@@ -1177,8 +1188,8 @@ function Upload() {
 
         .btn-secondary {
           height: 48px;
-          border-radius: 10px;
-          border: 1px solid #e5e7eb;
+          border-radius: 12px;
+          border: 1px solid rgba(17,24,39,0.10);
           background: #fff;
           color: #374151;
           display: flex;

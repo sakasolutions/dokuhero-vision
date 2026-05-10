@@ -258,7 +258,7 @@ function StatCell({ value, label }) {
           fontSize: '11px',
           color: '#9ca3af',
           textTransform: 'uppercase',
-          letterSpacing: '0.02em',
+          letterSpacing: '0.06em',
           lineHeight: 1.3,
         }}
       >
@@ -611,11 +611,12 @@ function Documents() {
                     }
                     style={{
                       background: 'white',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '12px',
+                      border: '1px solid rgba(17,24,39,0.10)',
+                      borderRadius: '14px',
                       padding: '14px 16px',
                       marginBottom: '8px',
                       cursor: 'pointer',
+                      boxShadow: '0 6px 18px rgba(17,24,39,0.05)',
                     }}
                   >
                     <p style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#111827' }}>
@@ -631,13 +632,13 @@ function Documents() {
               <>
                 <p
                   style={{
-                    margin: '16px 0 0',
+                    margin: '12px 0 0',
                     padding: '0 16px',
-                    fontSize: '13px',
+                    fontSize: '12px',
                     fontWeight: 600,
-                    color: '#9ca3af',
+                    color: '#6b7280',
                     textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
+                    letterSpacing: '0.07em',
                   }}
                 >
                   Ordner
@@ -690,14 +691,15 @@ function Documents() {
                                   gap: '10px',
                                   width: '100%',
                                   margin: '0 0 6px',
-                                  padding: '10px 12px',
+                                  padding: '12px 14px',
                                   background: '#fff',
-                                  border: '1px solid #e5e7eb',
-                                  borderRadius: '10px',
+                                  border: '1px solid rgba(17,24,39,0.10)',
+                                  borderRadius: '14px',
                                   cursor: 'pointer',
                                   textAlign: 'left',
                                   fontFamily: 'inherit',
                                   boxSizing: 'border-box',
+                                  boxShadow: '0 6px 18px rgba(17,24,39,0.05)',
                                 }}
                               >
                                 <div
@@ -723,7 +725,7 @@ function Documents() {
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis',
                                       whiteSpace: 'nowrap',
-                                      maxWidth: '160px',
+                                      maxWidth: 'min(220px, 58vw)',
                                     }}
                                   >
                                     {sub.name} ({sub.count})
@@ -764,13 +766,14 @@ function Documents() {
                           margin: '0 0 8px',
                           padding: '14px 16px',
                           background: '#fff',
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '12px',
+                          border: '1px solid rgba(17,24,39,0.10)',
+                          borderRadius: '14px',
                           cursor: 'pointer',
                           textAlign: 'left',
                           fontFamily: 'inherit',
                           width: '100%',
                           boxSizing: 'border-box',
+                          boxShadow: '0 6px 18px rgba(17,24,39,0.05)',
                         }}
                       >
                         <div

@@ -36,6 +36,11 @@ body {
   min-height: 100vh;
 }
 
+/* iPhone Home Indicator / Safe Area — BottomNav nutzt padding-bottom */
+.pb-safe {
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
 /* Dezente Interactions für moderneres Feel */
 a {
   color: inherit;

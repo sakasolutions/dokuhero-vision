@@ -123,7 +123,7 @@ export default function Inbox() {
     <main
       style={{
         minHeight: '100vh',
-        backgroundColor: '#f3f4f6',
+        backgroundColor: 'transparent',
         color: '#111827',
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
@@ -133,8 +133,9 @@ export default function Inbox() {
           position: 'sticky',
           top: 0,
           zIndex: 10,
-          backgroundColor: '#ffffff',
-          borderBottom: '1px solid #e5e7eb',
+          backgroundColor: 'rgba(255,255,255,0.82)',
+          borderBottom: '1px solid rgba(17,24,39,0.08)',
+          backdropFilter: 'blur(10px)',
         }}
       >
         <div
@@ -176,9 +177,9 @@ export default function Inbox() {
             style={{
               width: '36px',
               height: '36px',
-              borderRadius: '8px',
-              border: '1px solid #e5e7eb',
-              background: 'transparent',
+              borderRadius: '10px',
+              border: '1px solid rgba(17,24,39,0.10)',
+              background: 'rgba(255,255,255,0.6)',
               padding: 0,
               display: 'grid',
               placeItems: 'center',
@@ -222,10 +223,11 @@ export default function Inbox() {
           <div
             style={{
               background: '#fff',
-              border: '1px solid #e5e7eb',
-              borderRadius: '12px',
-              padding: '20px 16px',
+              border: '1px solid rgba(17,24,39,0.10)',
+              borderRadius: '14px',
+              padding: '18px 16px',
               textAlign: 'center',
+              boxShadow: '0 8px 22px rgba(17,24,39,0.06)',
             }}
           >
             <p style={{ margin: 0, fontSize: '15px', color: '#374151', lineHeight: 1.5 }}>
@@ -241,10 +243,12 @@ export default function Inbox() {
                 fontWeight: 600,
                 color: '#fff',
                 border: 'none',
-                borderRadius: '8px',
-                padding: '10px 18px',
-                background: '#6366f1',
+                borderRadius: '12px',
+                padding: '12px 22px',
+                minHeight: '48px',
+                background: 'linear-gradient(135deg, rgba(99,102,241,1) 0%, rgba(79,70,229,1) 100%)',
                 cursor: 'pointer',
+                boxShadow: '0 14px 30px rgba(99,102,241,0.22)',
               }}
             >
               Zu Einstellungen
@@ -260,12 +264,14 @@ export default function Inbox() {
           <>
             <div
               style={{
-                background: '#eef2ff',
+                background: 'rgba(99,102,241,0.08)',
+                border: '1px solid rgba(99,102,241,0.18)',
                 borderRadius: '12px',
-                padding: '12px 16px',
-                marginBottom: '16px',
+                padding: '10px 14px',
+                marginBottom: '14px',
                 fontSize: '13px',
-                color: '#6366f1',
+                color: '#4338ca',
+                lineHeight: 1.45,
               }}
             >
               PDFs aus deinen letzten 30 Tagen. Tippe auf &quot;Ablegen&quot; um sie zu sortieren.
@@ -282,10 +288,11 @@ export default function Inbox() {
                 key={mail.id}
                 style={{
                   background: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  marginBottom: '8px',
+                  border: '1px solid rgba(17,24,39,0.10)',
+                  borderRadius: '16px',
+                  padding: '14px 16px',
+                  marginBottom: '10px',
+                  boxShadow: '0 8px 22px rgba(17,24,39,0.05)',
                 }}
               >
                 <p
@@ -363,22 +370,37 @@ export default function Inbox() {
                             disabled={state?.status === 'loading'}
                             style={{
                               width: '100%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '12px',
+                              minHeight: '48px',
                               textAlign: 'left',
                               fontFamily: 'inherit',
-                              fontSize: '13px',
+                              fontSize: '14px',
                               fontWeight: 500,
-                              color: '#6366f1',
-                              border: '1px solid #6366f1',
-                              borderRadius: '8px',
-                              padding: '6px 12px',
-                              background: '#fff',
+                              color: '#374151',
+                              border: '1px solid rgba(17,24,39,0.12)',
+                              borderRadius: '12px',
+                              padding: '10px 14px',
+                              background: 'rgba(17,24,39,0.02)',
                               cursor: state?.status === 'loading' ? 'wait' : 'pointer',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
                             }}
                           >
-                            📎 {fname} — Ablegen
+                            <span
+                              style={{
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                flex: 1,
+                                minWidth: 0,
+                              }}
+                            >
+                              {fname}
+                            </span>
+                            <span style={{ flexShrink: 0, fontSize: '13px', fontWeight: 600, color: '#6366f1' }}>
+                              Ablegen
+                            </span>
                           </button>
                         ) : null}
                       </div>

@@ -456,10 +456,12 @@ export default function Settings() {
                     fontWeight: 600,
                     color: '#fff',
                     border: 'none',
-                    borderRadius: '8px',
-                    padding: '8px 16px',
-                    background: '#6366f1',
+                    borderRadius: '12px',
+                    padding: '10px 20px',
+                    minHeight: '44px',
+                    background: 'linear-gradient(135deg, rgba(99,102,241,1) 0%, rgba(79,70,229,1) 100%)',
                     cursor: 'pointer',
+                    boxShadow: '0 12px 28px rgba(99,102,241,0.22)',
                   }}
                 >
                   Verbinden
@@ -506,7 +508,7 @@ export default function Settings() {
               style={{
                 ...cardBase,
                 border:
-                  storageProvider === 'hetzner' ? '2px solid #6366f1' : '1px solid #e5e7eb',
+                  storageProvider === 'hetzner' ? '2px solid rgba(99,102,241,0.65)' : '1px solid rgba(17,24,39,0.10)',
                 marginBottom: '12px',
               }}
             >
@@ -546,10 +548,16 @@ export default function Settings() {
                         fontWeight: 600,
                         color: '#fff',
                         border: 'none',
-                        borderRadius: '8px',
-                        padding: '8px 16px',
-                        background: activatingProvider === 'hetzner' ? '#a5b4fc' : '#6366f1',
+                        borderRadius: '12px',
+                        padding: '10px 20px',
+                        minHeight: '44px',
+                        background:
+                          activatingProvider === 'hetzner'
+                            ? '#a5b4fc'
+                            : 'linear-gradient(135deg, rgba(99,102,241,1) 0%, rgba(79,70,229,1) 100%)',
                         cursor: activatingProvider === 'hetzner' ? 'default' : 'pointer',
+                        boxShadow:
+                          activatingProvider === 'hetzner' ? 'none' : '0 12px 28px rgba(99,102,241,0.22)',
                       }}
                     >
                       {activatingProvider === 'hetzner' ? 'Wird aktiviert…' : 'Aktivieren'}
@@ -564,7 +572,9 @@ export default function Settings() {
               style={{
                 ...cardBase,
                 border:
-                  storageProvider === 'google_drive' ? '2px solid #6366f1' : '1px solid #e5e7eb',
+                  storageProvider === 'google_drive'
+                    ? '2px solid rgba(99,102,241,0.65)'
+                    : '1px solid rgba(17,24,39,0.10)',
                 marginBottom: '10px',
               }}
             >
@@ -605,10 +615,16 @@ export default function Settings() {
                           fontWeight: 600,
                           color: '#fff',
                           border: 'none',
-                          borderRadius: '8px',
-                          padding: '8px 16px',
-                          background: activatingProvider === 'google_drive' ? '#a5b4fc' : '#6366f1',
+                          borderRadius: '12px',
+                          padding: '10px 20px',
+                          minHeight: '44px',
+                          background:
+                            activatingProvider === 'google_drive'
+                              ? '#a5b4fc'
+                              : 'linear-gradient(135deg, rgba(99,102,241,1) 0%, rgba(79,70,229,1) 100%)',
                           cursor: activatingProvider === 'google_drive' ? 'default' : 'pointer',
+                          boxShadow:
+                            activatingProvider === 'google_drive' ? 'none' : '0 12px 28px rgba(99,102,241,0.22)',
                         }}
                       >
                         {activatingProvider === 'google_drive' ? 'Wird aktiviert…' : 'Aktivieren'}
@@ -623,9 +639,10 @@ export default function Settings() {
                           fontSize: '14px',
                           fontWeight: 600,
                           color: '#6366f1',
-                          border: '1px solid #6366f1',
-                          borderRadius: '8px',
-                          padding: '8px 16px',
+                          border: '1px solid rgba(99,102,241,0.45)',
+                          borderRadius: '12px',
+                          padding: '10px 20px',
+                          minHeight: '44px',
                           background: '#fff',
                           cursor: 'pointer',
                         }}
@@ -640,7 +657,26 @@ export default function Settings() {
 
             <div style={{ ...cardBase, marginBottom: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '14px', color: '#6b7280' }}>OneDrive</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                  <div
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '8px',
+                      background: '#f3f4f6',
+                      display: 'grid',
+                      placeItems: 'center',
+                      flexShrink: 0,
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      color: '#9ca3af',
+                      letterSpacing: '-0.02em',
+                    }}
+                  >
+                    OD
+                  </div>
+                  <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#111827' }}>OneDrive</p>
+                </div>
                 {badgeSoon()}
               </div>
             </div>

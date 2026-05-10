@@ -86,22 +86,25 @@ function BottomNav() {
       onClick={() => navigate(path)}
       style={{
         flex: 1,
-        height: '100%',
+        minHeight: '56px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '4px',
+        gap: '5px',
         cursor: 'pointer',
         border: 'none',
         background: 'transparent',
-        padding: 0,
+        padding: '6px 4px 8px',
         fontFamily: 'inherit',
         color: active ? '#6366f1' : '#9ca3af',
+        WebkitTapHighlightColor: 'transparent',
       }}
     >
       {icon}
-      <span style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1.15, textAlign: 'center' }}>{label}</span>
+      <span style={{ fontSize: '11px', fontWeight: active ? 600 : 500, lineHeight: 1.15, textAlign: 'center' }}>
+        {label}
+      </span>
     </button>
   );
 
@@ -113,10 +116,15 @@ function BottomNav() {
         left: 0,
         right: 0,
         zIndex: 100,
-        height: '60px',
+        minHeight: 'calc(56px + env(safe-area-inset-bottom, 0px))',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         display: 'flex',
-        background: '#fff',
-        borderTop: '1px solid #e5e7eb',
+        alignItems: 'stretch',
+        background: 'rgba(255,255,255,0.92)',
+        backdropFilter: 'blur(14px)',
+        WebkitBackdropFilter: 'blur(14px)',
+        borderTop: '1px solid rgba(17,24,39,0.08)',
+        boxShadow: '0 -8px 32px rgba(17,24,39,0.06)',
       }}
     >
       {tab(
