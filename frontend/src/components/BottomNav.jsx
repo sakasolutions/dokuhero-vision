@@ -70,11 +70,10 @@ function IconDocumentList({ size = 22, color = 'currentColor' }) {
 function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
-  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('dokuhero_token') : null;
 
-  if (!token) {
-    return null;
-  }
+  // Hinweis: Session kann über HttpOnly-Cookies laufen — dann gibt es keinen
+  // `dokuhero_token` in localStorage. Diese Komponente wird nur auf geschützten
+  // Seiten eingebunden; dort soll die Navbar immer sichtbar sein.
 
   const isUpload = location.pathname === '/upload';
   const isDocuments = location.pathname === '/documents';
