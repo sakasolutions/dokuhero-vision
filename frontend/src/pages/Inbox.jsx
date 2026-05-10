@@ -45,6 +45,34 @@ function attachKey(messageId, attachmentId) {
   return `${messageId}:${attachmentId}`;
 }
 
+/** Gmail „From:“ oft als `"Name" <mail@…>` oder nur E-Mail-Adresse */
+function parseFromHeader(raw) {
+  if (!raw || typeof raw !== 'string') {
+    return { displayName: 'Unbekannt', email: null };
+  }
+  const s = raw.trim();
+  const m = s.match(/^(.+?)\s*<([^>]+)>$/);
+  if (m) {
+    let name = m[1].trim().replace(/^["']|["']$/g, '').trim();
+    const email = m[2].trim();
+    if (!name) name = email;
+    return { displayName: name, email };
+  }
+  if (s.includes('@')) {
+    return { displayName: s, email: null };
+  }
+  return { displayName: s || 'Unbekannt', email: null };
+}
+
+function formatMailDate(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) {
+    return raw.length > 44 ? `${raw.slice(0, 41)}…` : raw;
+  }
+  return d.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 export default function Inbox() {
   const navigate = useNavigate();
   const [emails, setEmails] = useState([]);
@@ -283,7 +311,9 @@ export default function Inbox() {
               </p>
             ) : null}
 
-            {emails.map((mail) => (
+            {emails.map((mail) => {
+              const fromParsed = parseFromHeader(mail.from);
+              return (
               <article
                 key={mail.id}
                 style={{
@@ -295,32 +325,82 @@ export default function Inbox() {
                   boxShadow: '0 8px 22px rgba(17,24,39,0.05)',
                 }}
               >
+                <div style={{ marginBottom: '6px' }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: '#9ca3af',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                    }}
+                  >
+                    Absender
+                  </p>
+                  <p
+                    style={{
+                      margin: '4px 0 0',
+                      fontSize: '15px',
+                      fontWeight: 600,
+                      color: '#111827',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {fromParsed.displayName}
+                  </p>
+                  {fromParsed.email ? (
+                    <p
+                      style={{
+                        margin: '2px 0 0',
+                        fontSize: '12px',
+                        color: '#6b7280',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fromParsed.email}
+                    </p>
+                  ) : null}
+                </div>
                 <p
                   style={{
-                    margin: 0,
-                    fontSize: '14px',
+                    margin: '10px 0 0',
+                    fontSize: '11px',
                     fontWeight: 600,
-                    color: '#111827',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    color: '#9ca3af',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
                   }}
                 >
-                  {mail.from || 'Unbekannt'}
+                  Betreff
                 </p>
                 <p
                   style={{
-                    margin: '2px 0 0',
+                    margin: '4px 0 0',
                     fontSize: '13px',
-                    color: '#6b7280',
+                    color: '#374151',
+                    lineHeight: 1.4,
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
                     overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
                   }}
                 >
                   {mail.subject || '(Ohne Betreff)'}
                 </p>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#9ca3af' }}>{mail.date || ''}</p>
+                <p
+                  style={{
+                    margin: '8px 0 0',
+                    fontSize: '12px',
+                    color: '#9ca3af',
+                  }}
+                >
+                  {formatMailDate(mail.date)}
+                </p>
 
                 <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {(mail.attachments || []).map((att) => {
@@ -408,7 +488,8 @@ export default function Inbox() {
                   })}
                 </div>
               </article>
-            ))}
+              );
+            })}
           </>
         ) : null}
       </div>
