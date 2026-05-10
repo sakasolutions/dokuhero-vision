@@ -3,7 +3,7 @@ const sharp = require('sharp');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-async function extractText(imageBuffer, mimeType) {
+async function extractText(imageBuffer, mimeType, skipCrop = false) {
   const isPdf = mimeType === 'application/pdf';
   const base64 = imageBuffer.toString('base64');
   const safeMime = mimeType === 'image/heic' ? 'image/jpeg' : mimeType;
@@ -36,21 +36,24 @@ async function extractText(imageBuffer, mimeType) {
     return { text, textLength: text.length, hasText: text.length > 10, croppedBuffer: null };
   }
 
-  // SCHRITT 1: Bild zuschneiden mit GPT Vision
-  const cropResponse = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    max_tokens: 100,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image_url',
-            image_url: { url: `data:${safeMime};base64,${base64}` },
-          },
-          {
-            type: 'text',
-            text: `You are a precise document scanner. Find the document/paper/letter in this photo.
+  let croppedBuffer = null;
+
+  if (!skipCrop) {
+    // SCHRITT 1: Bild zuschneiden mit GPT Vision
+    const cropResponse = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 100,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: `data:${safeMime};base64,${base64}` },
+            },
+            {
+              type: 'text',
+              text: `You are a precise document scanner. Find the document/paper/letter in this photo.
           
 The document is a rectangular piece of paper - it may be on a table, floor, or dark surface.
 Look for: straight edges, text content, white or light colored area.
@@ -61,41 +64,45 @@ Return ONLY a JSON object with pixel percentages (0-100) of where the document i
 Be aggressive about cropping - remove ALL background, table, hands, shadows.
 If the photo is already just the document with no background, return {"x":0,"y":0,"width":100,"height":100}
 Return ONLY the JSON, nothing else.`,
-          },
-        ],
-      },
-    ],
-  });
+            },
+          ],
+        },
+      ],
+    });
 
-  let croppedBuffer = null;
-  try {
-    const cropText = cropResponse.choices[0].message.content || '';
-    const match = cropText.match(/\{[^}]+\}/);
-    if (match) {
-      const coords = JSON.parse(match[0]);
-      const meta = await sharp(imageBuffer).metadata();
-      const x = Math.max(0, Math.floor((coords.x / 100) * meta.width));
-      const y = Math.max(0, Math.floor((coords.y / 100) * meta.height));
-      const w = Math.min(meta.width - x, Math.floor((coords.width / 100) * meta.width));
-      const h = Math.min(meta.height - y, Math.floor((coords.height / 100) * meta.height));
+    try {
+      const cropText = cropResponse.choices[0].message.content || '';
+      const match = cropText.match(/\{[^}]+\}/);
+      if (match) {
+        const coords = JSON.parse(match[0]);
+        const meta = await sharp(imageBuffer).metadata();
+        const x = Math.max(0, Math.floor((coords.x / 100) * meta.width));
+        const y = Math.max(0, Math.floor((coords.y / 100) * meta.height));
+        const w = Math.min(meta.width - x, Math.floor((coords.width / 100) * meta.width));
+        const h = Math.min(meta.height - y, Math.floor((coords.height / 100) * meta.height));
 
-      // Nur croppen wenn wirklich Rand vorhanden
-      if (coords.x > 3 || coords.y > 3 || coords.width < 97 || coords.height < 97) {
-        croppedBuffer = await sharp(imageBuffer)
-          .extract({ left: x, top: y, width: w, height: h })
-          .jpeg({ quality: 95 })
-          .toBuffer();
-        console.log(`✂️ Crop: x=${coords.x}% y=${coords.y}% w=${coords.width}% h=${coords.height}%`);
+        // Nur croppen wenn wirklich Rand vorhanden
+        if (coords.x > 3 || coords.y > 3 || coords.width < 97 || coords.height < 97) {
+          croppedBuffer = await sharp(imageBuffer)
+            .extract({ left: x, top: y, width: w, height: h })
+            .jpeg({ quality: 95 })
+            .toBuffer();
+          console.log(`✂️ Crop: x=${coords.x}% y=${coords.y}% w=${coords.width}% h=${coords.height}%`);
+        }
       }
+    } catch (e) {
+      console.error('Crop Fehler:', e.message);
     }
-  } catch (e) {
-    console.error('Crop Fehler:', e.message);
-  }
 
-  console.log(`[OCR] Input buffer: ${Math.round(imageBuffer.length / 1024)} KB`);
-  if (croppedBuffer) {
-    console.log(`[OCR] Cropped buffer: ${Math.round(croppedBuffer.length / 1024)} KB`);
+    console.log(`[OCR] Input buffer: ${Math.round(imageBuffer.length / 1024)} KB`);
+    if (croppedBuffer) {
+      console.log(`[OCR] Cropped buffer: ${Math.round(croppedBuffer.length / 1024)} KB`);
+    } else {
+      console.log(`[OCR] Kein Crop — Original wird gespeichert`);
+    }
   } else {
+    console.log('[OCR] skipCrop=true — GPT-Crop übersprungen (Frontend-Zuschnitt)');
+    console.log(`[OCR] Input buffer: ${Math.round(imageBuffer.length / 1024)} KB`);
     console.log(`[OCR] Kein Crop — Original wird gespeichert`);
   }
 

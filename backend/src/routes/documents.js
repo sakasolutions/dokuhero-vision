@@ -87,7 +87,8 @@ async function bufferAndMimeForOcr(buffer, mimeType) {
  */
 async function ocrFileToText(file) {
   const { buffer, mimeType } = await bufferAndMimeForOcr(file.buffer, file.mimetype);
-  const ocr = await ocrService.extractText(buffer, mimeType);
+  const skipCrop = file.originalname === 'document.jpg';
+  const ocr = await ocrService.extractText(buffer, mimeType, skipCrop);
   return ocr.text || '';
 }
 
@@ -466,7 +467,11 @@ router.post('/upload', requireAuth, (req, res) => {
         docFile.buffer,
         docFile.mimetype
       );
-      const ocr = await ocrService.extractText(ocrInputBuffer, ocrInputMime);
+      const ocr = await ocrService.extractText(
+        ocrInputBuffer,
+        ocrInputMime,
+        docFile.originalname === 'document.jpg'
+      );
       const m = (docFile.mimetype || '').toLowerCase();
       const isImage = m.startsWith('image/');
       const hasCrop = ocr.croppedBuffer && Buffer.isBuffer(ocr.croppedBuffer) && ocr.croppedBuffer.length > 0;
