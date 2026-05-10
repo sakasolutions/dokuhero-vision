@@ -253,16 +253,12 @@ function stripPdfExtension(name) {
   return name.replace(/\.pdf$/i, '');
 }
 
-function formatReminderDueDateDE(iso) {
+function formatReminderDueShort(iso) {
   if (!iso) return '—';
   try {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '—';
-    return d.toLocaleDateString('de-DE', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
+    return d.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' });
   } catch {
     return '—';
   }
@@ -357,10 +353,7 @@ function Documents() {
     (async () => {
       setLoadingReminders(true);
       try {
-        const lsToken = localStorage.getItem('dokuhero_token');
-        const { data } = await api.get('/api/reminders', {
-          headers: lsToken ? { Authorization: `Bearer ${lsToken}` } : {},
-        });
+        const { data } = await api.get('/api/reminders');
         if (!cancelled) {
           setReminders(Array.isArray(data?.reminders) ? data.reminders : []);
         }
@@ -597,88 +590,88 @@ function Documents() {
               </div>
             </section>
 
-            {!loadingReminders && remindersSorted.length > 0 ? (
-              <section
-                style={{
-                  background: '#fff',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  margin: '16px',
-                  marginBottom: '8px',
-                }}
-              >
+            {remindersSorted.length > 0 ? (
+              <div style={{ margin: '16px', marginBottom: '8px' }}>
                 <p
                   style={{
-                    margin: '0 0 12px',
+                    margin: '0 0 10px',
                     fontSize: '12px',
-                    fontWeight: 600,
-                    color: '#6b7280',
-                    letterSpacing: '0.02em',
+                    fontWeight: 700,
+                    color: '#9ca3af',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
                   }}
                 >
                   ⚠️ {remindersSorted.length} Frist{remindersSorted.length === 1 ? '' : 'en'} anstehend
                 </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div>
                   {remindersSorted.map((r) => {
                     const fn = r?.documents?.filename;
                     const title = stripPdfExtension(typeof fn === 'string' ? fn : '');
                     const dot = reminderDueDotColor(r?.due_date);
                     return (
-                      <button
+                      <div
                         key={r.id}
-                        type="button"
-                        onClick={() => {
-                          navigate('/documents');
-                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {}}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                          }
                         }}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
                           gap: '10px',
-                          width: '100%',
-                          padding: 0,
-                          margin: 0,
-                          border: 'none',
-                          background: 'transparent',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          fontFamily: 'inherit',
+                          background: '#fff',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '10px',
+                          padding: '12px 14px',
+                          marginBottom: '6px',
+                          cursor: 'default',
+                          boxSizing: 'border-box',
                         }}
                       >
                         <span
                           aria-hidden
                           style={{
-                            width: '10px',
-                            height: '10px',
+                            width: '8px',
+                            height: '8px',
                             borderRadius: '999px',
                             backgroundColor: dot,
                             flexShrink: 0,
                           }}
                         />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p
-                            style={{
-                              margin: 0,
-                              fontSize: '14px',
-                              fontWeight: 600,
-                              color: '#111827',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {title}
-                          </p>
-                          <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7280' }}>
-                            {formatReminderDueDateDE(r?.due_date)}
-                          </p>
-                        </div>
-                      </button>
+                        <span
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            color: '#111827',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {title}
+                        </span>
+                        <span
+                          style={{
+                            flexShrink: 0,
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            color: '#6b7280',
+                          }}
+                        >
+                          {formatReminderDueShort(r?.due_date)}
+                        </span>
+                      </div>
                     );
                   })}
                 </div>
-              </section>
+              </div>
             ) : null}
 
             <div style={{ padding: '0 16px', marginBottom: '8px' }}>

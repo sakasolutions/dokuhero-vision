@@ -85,7 +85,7 @@ Return ONLY the JSON, nothing else.`,
         if (coords.x > 3 || coords.y > 3 || coords.width < 97 || coords.height < 97) {
           croppedBuffer = await sharp(imageBuffer)
             .extract({ left: x, top: y, width: w, height: h })
-            .jpeg({ quality: 95 })
+            .jpeg({ quality: 97 })
             .toBuffer();
           console.log(`✂️ Crop: x=${coords.x}% y=${coords.y}% w=${coords.width}% h=${coords.height}%`);
         }

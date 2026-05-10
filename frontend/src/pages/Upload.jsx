@@ -246,7 +246,7 @@ function Upload() {
           resolve(blob);
         },
         'image/jpeg',
-        0.95
+        0.97
       );
     });
 
