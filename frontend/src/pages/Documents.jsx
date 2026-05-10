@@ -55,6 +55,15 @@ function IconChevronRight({ size = 16, color = '#6366f1' }) {
   );
 }
 
+function IconSearchMagnifier({ color = '#374151' }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" stroke={color} strokeWidth="2" />
+      <path d="M20 20l-4.35-4.35" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function IconLogoutDoor() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -248,9 +257,16 @@ function newestFolderModifiedIso(folders) {
   return iso;
 }
 
-function stripPdfExtension(name) {
-  if (!name || typeof name !== 'string') return '—';
-  return name.replace(/\.pdf$/i, '');
+function readableReminderTitle(reminder) {
+  const rawTitle = reminder?.title;
+  if (typeof rawTitle === 'string' && rawTitle.trim()) return rawTitle.trim();
+
+  const fn = reminder?.documents?.filename;
+  if (!fn || typeof fn !== 'string') return '—';
+
+  let s = fn.replace(/\.(pdf|jpe?g)$/i, '');
+  s = s.replace(/^\d{4}-\d{2}_/, '');
+  return s.replace(/_/g, ' ').trim() || '—';
 }
 
 function formatReminderDueShort(iso) {
@@ -304,11 +320,23 @@ function Documents() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [storageProvider, setStorageProvider] = useState(() => localStorage.getItem(LS_STORAGE_PROVIDER));
+  const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [reminders, setReminders] = useState([]);
   const [loadingReminders, setLoadingReminders] = useState(false);
+
+  const toggleSearchOpen = () => {
+    setSearchOpen((prev) => {
+      const next = !prev;
+      if (!next) {
+        setSearchQuery('');
+        setSearchResults([]);
+      }
+      return next;
+    });
+  };
 
   const handleSearch = async (value) => {
     setSearchQuery(value);
@@ -431,71 +459,162 @@ function Documents() {
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
     >
-      <header
+      <div
         style={{
           position: 'sticky',
           top: 0,
           zIndex: 10,
           backgroundColor: 'rgba(255,255,255,0.82)',
-          borderBottom: '1px solid rgba(17,24,39,0.08)',
           backdropFilter: 'blur(10px)',
         }}
       >
-        <div
+        <header
           style={{
-            maxWidth: '480px',
-            margin: '0 auto',
-            padding: '14px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
+            borderBottom: searchOpen ? 'none' : '1px solid rgba(17,24,39,0.08)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
-            <IconHeaderDocuments />
-            <h1
-              style={{
-                margin: 0,
-                fontSize: '17px',
-                fontWeight: 600,
-                color: '#111827',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Meine Dokumente
-            </h1>
-          </div>
-          <button
-            type="button"
-            className="logout-header-button"
-            onClick={async () => {
-              localStorage.removeItem(LS_STORAGE_PROVIDER);
-              localStorage.removeItem('gmail_token');
-              localStorage.removeItem('gmail_refresh_token');
-              await clearClientSession();
-              window.location.href = '/';
-            }}
-            aria-label="Abmelden"
+          <div
             style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '10px',
-              border: '1px solid rgba(17,24,39,0.10)',
-              background: 'rgba(255,255,255,0.6)',
-              padding: 0,
-              display: 'grid',
-              placeItems: 'center',
-              cursor: 'pointer',
-              flexShrink: 0,
+              maxWidth: '480px',
+              margin: '0 auto',
+              padding: '14px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
             }}
           >
-            <IconLogoutDoor />
-          </button>
-        </div>
-      </header>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+              <IconHeaderDocuments />
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: '17px',
+                  fontWeight: 600,
+                  color: '#111827',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Meine Dokumente
+              </h1>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+              <button
+                type="button"
+                className="documents-search-toggle"
+                onClick={toggleSearchOpen}
+                aria-label={searchOpen ? 'Suche schließen' : 'Suche öffnen'}
+                aria-pressed={searchOpen}
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(17,24,39,0.10)',
+                  background: searchOpen ? '#eef2ff' : 'rgba(255,255,255,0.6)',
+                  padding: 0,
+                  display: 'grid',
+                  placeItems: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <IconSearchMagnifier color={searchOpen ? '#6366f1' : '#374151'} />
+              </button>
+              <button
+                type="button"
+                className="logout-header-button"
+                onClick={async () => {
+                  localStorage.removeItem(LS_STORAGE_PROVIDER);
+                  localStorage.removeItem('gmail_token');
+                  localStorage.removeItem('gmail_refresh_token');
+                  await clearClientSession();
+                  window.location.href = '/';
+                }}
+                aria-label="Abmelden"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(17,24,39,0.10)',
+                  background: 'rgba(255,255,255,0.6)',
+                  padding: 0,
+                  display: 'grid',
+                  placeItems: 'center',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <IconLogoutDoor />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {searchOpen ? (
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderBottom: '1px solid rgba(17,24,39,0.08)',
+              padding: '10px 16px 12px',
+            }}
+          >
+            <div
+              style={{
+                maxWidth: '480px',
+                margin: '0 auto',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'white',
+                border: '1px solid rgba(17,24,39,0.10)',
+                borderRadius: '14px',
+                padding: '10px 14px',
+                boxShadow: '0 8px 20px rgba(17,24,39,0.05)',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Dokumente durchsuchen..."
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                autoFocus
+                style={{
+                  border: 'none',
+                  outline: 'none',
+                  width: '100%',
+                  fontSize: '14px',
+                  color: '#111827',
+                  background: 'transparent',
+                }}
+              />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchResults([]);
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#9ca3af',
+                    fontSize: '20px',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       <div style={{ maxWidth: '480px', margin: '0 auto', padding: '0 0 70px' }}>
         {loading ? (
@@ -606,8 +725,7 @@ function Documents() {
                 </p>
                 <div>
                   {remindersSorted.map((r) => {
-                    const fn = r?.documents?.filename;
-                    const title = stripPdfExtension(typeof fn === 'string' ? fn : '');
+                    const title = readableReminderTitle(r);
                     const dot = reminderDueDotColor(r?.due_date);
                     return (
                       <div
@@ -674,60 +792,7 @@ function Documents() {
               </div>
             ) : null}
 
-            <div style={{ padding: '0 16px', marginBottom: '8px' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'white',
-                  border: '1px solid rgba(17,24,39,0.10)',
-                  borderRadius: '14px',
-                  padding: '10px 14px',
-                  boxShadow: '0 8px 20px rgba(17,24,39,0.05)',
-                }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8" />
-                  <path d="m21 21-4.35-4.35" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Dokumente durchsuchen..."
-                  value={searchQuery}
-                  onChange={(e) => handleSearch(e.target.value)}
-                  style={{
-                    border: 'none',
-                    outline: 'none',
-                    width: '100%',
-                    fontSize: '14px',
-                    color: '#111827',
-                    background: 'transparent',
-                  }}
-                />
-                {searchQuery ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchQuery('');
-                      setSearchResults([]);
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      color: '#9ca3af',
-                      fontSize: '20px',
-                      lineHeight: 1,
-                    }}
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            {searchQuery ? (
+            {searchOpen && searchQuery.trim().length >= 2 ? (
               <div style={{ padding: '0 16px' }}>
                 {isSearching ? (
                   <p style={{ color: '#9ca3af', textAlign: 'center' }}>Suche...</p>
@@ -982,6 +1047,9 @@ function Documents() {
       <style>{`
         .logout-header-button:hover {
           background: #f3f4f6;
+        }
+        .documents-search-toggle:hover {
+          background: #f3f4f6 !important;
         }
       `}</style>
       <BottomNav />
