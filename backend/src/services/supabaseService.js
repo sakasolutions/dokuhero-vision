@@ -5,37 +5,42 @@ const { createClient } = require('@supabase/supabase-js');
 let _supabase;
 
 function getSupabase() {
-  if (!_supabase) {
-    const url = process.env.SUPABASE_URL;
-    const key = String(process.env.SUPABASE_SERVICE_KEY || '').trim();
-    if (!url || !key) {
-      throw new Error('SUPABASE_URL und SUPABASE_SERVICE_KEY müssen gesetzt sein.');
-    }
-    if (key.startsWith('sb_publish')) {
-      throw new Error(
-        'SUPABASE_SERVICE_KEY ist der Publishable/Anon-Key (beginnt mit sb_publish). Trage den geheimen «service_role»-Schlüssel ein: Supabase Dashboard → Project Settings → API → «service_role» «Reveal» / Secret — nicht «anon» oder «publishable».'
-      );
-    }
-    _supabase = createClient(url, key, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-      global: {
-        headers: {
-          Authorization: `Bearer ${key}`,
-        },
-      },
-    });
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(
-        '[Supabase] Client initialisiert, URL:',
-        typeof url === 'string' ? url.substring(0, 30) : '',
-        'Key prefix:',
-        typeof key === 'string' ? key.substring(0, 10) : ''
-      );
-    }
+  if (_supabase) {
+    return _supabase;
   }
+
+  const url = process.env.SUPABASE_URL;
+  const key = String(process.env.SUPABASE_SERVICE_KEY || '').trim();
+  if (!url || !key) {
+    throw new Error('SUPABASE_URL und SUPABASE_SERVICE_KEY müssen gesetzt sein.');
+  }
+  if (key.startsWith('sb_publish')) {
+    throw new Error(
+      'SUPABASE_SERVICE_KEY ist der Publishable/Anon-Key (beginnt mit sb_publish). Trage den geheimen «service_role»-Schlüssel ein: Supabase Dashboard → Project Settings → API → «service_role» «Reveal» / Secret — nicht «anon» oder «publishable».'
+    );
+  }
+
+  _supabase = createClient(url, key, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${key}`,
+      },
+    },
+  });
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(
+      '[Supabase] Client initialisiert, URL:',
+      typeof url === 'string' ? url.substring(0, 30) : '',
+      'Key prefix:',
+      typeof key === 'string' ? key.substring(0, 10) : ''
+    );
+  }
+
   return _supabase;
 }
 
