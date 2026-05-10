@@ -92,6 +92,13 @@ Return ONLY the JSON, nothing else.`,
     console.error('Crop Fehler:', e.message);
   }
 
+  console.log(`[OCR] Input buffer: ${Math.round(imageBuffer.length / 1024)} KB`);
+  if (croppedBuffer) {
+    console.log(`[OCR] Cropped buffer: ${Math.round(croppedBuffer.length / 1024)} KB`);
+  } else {
+    console.log(`[OCR] Kein Crop — Original wird gespeichert`);
+  }
+
   // SCHRITT 2: OCR auf gecroptem Bild
   const ocrBuffer = croppedBuffer || imageBuffer;
   const ocrBase64 = ocrBuffer.toString('base64');

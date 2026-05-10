@@ -248,6 +248,40 @@ function newestFolderModifiedIso(folders) {
   return iso;
 }
 
+function stripPdfExtension(name) {
+  if (!name || typeof name !== 'string') return '—';
+  return name.replace(/\.pdf$/i, '');
+}
+
+function formatReminderDueDateDE(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('de-DE', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch {
+    return '—';
+  }
+}
+
+/** Rot: ≤7 Tage oder überfällig; Orange: 8–30 Tage; Grün: >30 Tage */
+function reminderDueDotColor(dueIso) {
+  if (!dueIso) return '#9ca3af';
+  const due = new Date(dueIso);
+  if (Number.isNaN(due.getTime())) return '#9ca3af';
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startDue = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
+  const diffDays = Math.round((startDue - startToday) / 86400000);
+  if (diffDays <= 7) return '#dc2626';
+  if (diffDays <= 30) return '#f59e0b';
+  return '#16a34a';
+}
+
 function StatCell({ value, label }) {
   return (
     <div style={{ textAlign: 'center', minWidth: 0 }}>
@@ -277,6 +311,8 @@ function Documents() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [reminders, setReminders] = useState([]);
+  const [loadingReminders, setLoadingReminders] = useState(false);
 
   const handleSearch = async (value) => {
     setSearchQuery(value);
@@ -306,6 +342,39 @@ function Documents() {
   );
   const totalFiles = useMemo(() => totalFileCountFromFolders(folderGroups), [folderGroups]);
   const newestIso = useMemo(() => newestFolderModifiedIso(folderGroupsVisible), [folderGroupsVisible]);
+
+  const remindersSorted = useMemo(() => {
+    return [...reminders].sort((a, b) => {
+      const ta = new Date(a?.due_date || 0).getTime();
+      const tb = new Date(b?.due_date || 0).getTime();
+      return ta - tb;
+    });
+  }, [reminders]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setLoadingReminders(true);
+      try {
+        const lsToken = localStorage.getItem('dokuhero_token');
+        const { data } = await api.get('/api/reminders', {
+          headers: lsToken ? { Authorization: `Bearer ${lsToken}` } : {},
+        });
+        if (!cancelled) {
+          setReminders(Array.isArray(data?.reminders) ? data.reminders : []);
+        }
+      } catch {
+        if (!cancelled) setReminders([]);
+      } finally {
+        if (!cancelled) setLoadingReminders(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -527,6 +596,90 @@ function Documents() {
                 <StatCell value={formatZuletztHinzugefuegt(newestIso)} label="Zuletzt hinzugefügt" />
               </div>
             </section>
+
+            {!loadingReminders && remindersSorted.length > 0 ? (
+              <section
+                style={{
+                  background: '#fff',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  margin: '16px',
+                  marginBottom: '8px',
+                }}
+              >
+                <p
+                  style={{
+                    margin: '0 0 12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: '#6b7280',
+                    letterSpacing: '0.02em',
+                  }}
+                >
+                  ⚠️ {remindersSorted.length} Frist{remindersSorted.length === 1 ? '' : 'en'} anstehend
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {remindersSorted.map((r) => {
+                    const fn = r?.documents?.filename;
+                    const title = stripPdfExtension(typeof fn === 'string' ? fn : '');
+                    const dot = reminderDueDotColor(r?.due_date);
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => {
+                          navigate('/documents');
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          width: '100%',
+                          padding: 0,
+                          margin: 0,
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        <span
+                          aria-hidden
+                          style={{
+                            width: '10px',
+                            height: '10px',
+                            borderRadius: '999px',
+                            backgroundColor: dot,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p
+                            style={{
+                              margin: 0,
+                              fontSize: '14px',
+                              fontWeight: 600,
+                              color: '#111827',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {title}
+                          </p>
+                          <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7280' }}>
+                            {formatReminderDueDateDE(r?.due_date)}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
 
             <div style={{ padding: '0 16px', marginBottom: '8px' }}>
               <div
