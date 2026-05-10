@@ -931,9 +931,8 @@ function Upload() {
           const showInvoiceHighlight =
             isInvoiceOrSonstiges && (euroStr != null || monthYearStr != null);
           const showReminderCard =
-            Boolean(a.erinnerung_empfohlen) &&
-            !isInvoiceOrSonstiges &&
-            a.frist &&
+            a.frist != null &&
+            String(a.frist).trim() !== '' &&
             reminderUiState !== 'dismissed';
 
           return (
