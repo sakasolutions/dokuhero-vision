@@ -292,7 +292,7 @@ async function createReminder({ user_id, document_id, due_date, title }) {
 async function getUserReminders(userId) {
   const { data, error } = await getSupabase()
     .from('reminders')
-    .select('*, documents(filename, category, sender)')
+    .select('*, documents(filename, category, sender, storage_path)')
     .eq('user_id', userId)
     .eq('sent', false)
     .order('due_date', { ascending: true });

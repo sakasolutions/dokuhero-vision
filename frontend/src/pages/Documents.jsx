@@ -450,6 +450,19 @@ function Documents() {
   const showEmpty = !loading && !error && totalFiles === 0 && folderGroupsVisible.length === 0;
   const showContent = !loading && !error && (totalFiles > 0 || folderGroupsVisible.length > 0);
 
+  const handleReminderClick = (reminder) => {
+    const category = reminder.documents?.category;
+    const storagePath = reminder.documents?.storage_path || '';
+    const parts = storagePath.split('/').filter(Boolean);
+    const subfolder = parts.length >= 4 ? parts[2] : null;
+
+    if (category && subfolder) {
+      navigate(`/documents/folder/${encodeURIComponent(category)}/${encodeURIComponent(subfolder)}`);
+    } else if (category) {
+      navigate(`/documents/folder/${encodeURIComponent(category)}`);
+    }
+  };
+
   return (
     <main
       style={{
@@ -732,10 +745,11 @@ function Documents() {
                         key={r.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => {}}
+                        onClick={() => handleReminderClick(r)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
+                            handleReminderClick(r);
                           }
                         }}
                         style={{
@@ -747,7 +761,7 @@ function Documents() {
                           borderRadius: '10px',
                           padding: '12px 14px',
                           marginBottom: '6px',
-                          cursor: 'default',
+                          cursor: 'pointer',
                           boxSizing: 'border-box',
                         }}
                       >
