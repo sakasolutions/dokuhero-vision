@@ -27,6 +27,12 @@ export default function Landing() {
     document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const benefits = [
+    { title: 'Automatisch abgelegt', desc: 'Erkennt Kategorie & Ordner beim Upload.' },
+    { title: 'Sofort durchsuchbar', desc: 'OCR macht PDFs und Fotos findbar.' },
+    { title: 'Bei dir gespeichert', desc: 'Drive oder Tresor — du entscheidest.' },
+  ];
+
   return (
     <div
       style={{
@@ -158,13 +164,23 @@ export default function Landing() {
             margin: '20px 0 0',
             textAlign: isDesktop ? 'left' : 'center',
             fontSize: isDesktop ? '54px' : 'clamp(2rem, 7vw, 2.875rem)',
-            fontWeight: 600,
+            fontWeight: 650,
             letterSpacing: '-0.038em',
             lineHeight: 1.12,
             color: '#0f172a',
           }}
         >
-          Nie wieder Dokumente suchen.
+          Nie wieder Dokumente{' '}
+          <span
+            style={{
+              background: 'linear-gradient(90deg, rgba(99,102,241,0.18), rgba(99,102,241,0.0))',
+              borderRadius: '12px',
+              padding: '2px 10px 4px',
+            }}
+          >
+            suchen
+          </span>
+          .
         </h1>
 
         <p
@@ -180,6 +196,48 @@ export default function Landing() {
         >
           Foto oder PDF — die KI erkennt Inhalt und Ordner. Sortiert, durchsuchbar, bei dir gespeichert.
         </p>
+
+        <div
+          style={{
+            marginTop: '22px',
+            display: 'grid',
+            gridTemplateColumns: isDesktop ? '1fr 1fr 1fr' : '1fr',
+            gap: '10px',
+            maxWidth: isDesktop ? '560px' : '520px',
+            marginLeft: isDesktop ? 0 : 'auto',
+            marginRight: isDesktop ? 0 : 'auto',
+          }}
+        >
+          {benefits.map((b) => (
+            <div
+              key={b.title}
+              style={{
+                background: 'rgba(255,255,255,0.75)',
+                border: '1px solid rgba(15, 23, 42, 0.06)',
+                borderRadius: '14px',
+                padding: '12px 12px',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: '10px',
+                    height: '10px',
+                    borderRadius: '999px',
+                    background: '#6366f1',
+                    boxShadow: '0 0 0 4px rgba(99,102,241,0.12)',
+                    flexShrink: 0,
+                  }}
+                />
+                <p style={{ margin: 0, fontSize: '13px', fontWeight: 650, color: '#0f172a' }}>{b.title}</p>
+              </div>
+              <p style={{ margin: '6px 0 0', fontSize: '12.5px', color: '#64748b', lineHeight: 1.45 }}>{b.desc}</p>
+            </div>
+          ))}
+        </div>
 
         <div
           style={{
@@ -207,6 +265,7 @@ export default function Landing() {
               cursor: 'pointer',
               fontFamily: FONT,
               flex: isDesktop ? '0 0 auto' : '0 0 auto',
+              boxShadow: '0 14px 30px rgba(99, 102, 241, 0.24)',
             }}
           >
             Mit Google fortfahren
@@ -246,15 +305,29 @@ export default function Landing() {
 
           {isDesktop ? (
             <div style={{ width: '420px', flexShrink: 0 }}>
-              <div
-                style={{
-                  background: '#ffffff',
-                  border: '1px solid rgba(15, 23, 42, 0.08)',
-                  borderRadius: '16px',
-                  boxShadow: '0 18px 50px rgba(15, 23, 42, 0.08)',
-                  overflow: 'hidden',
-                }}
-              >
+              <div style={{ position: 'relative' }}>
+                <div
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    inset: '-18px -18px -18px -18px',
+                    background:
+                      'radial-gradient(260px 180px at 30% 15%, rgba(99,102,241,0.22), transparent 60%), radial-gradient(240px 180px at 70% 85%, rgba(99,102,241,0.14), transparent 62%)',
+                    filter: 'blur(6px)',
+                    opacity: 0.9,
+                    pointerEvents: 'none',
+                  }}
+                />
+                <div
+                  style={{
+                    position: 'relative',
+                    background: '#ffffff',
+                    border: '1px solid rgba(15, 23, 42, 0.08)',
+                    borderRadius: '16px',
+                    boxShadow: '0 18px 50px rgba(15, 23, 42, 0.08)',
+                    overflow: 'hidden',
+                  }}
+                >
                 <div
                   style={{
                     padding: '14px 14px 10px',
@@ -363,6 +436,8 @@ export default function Landing() {
                       }}
                     />
                   </div>
+                </div>
+              </div>
                 </div>
               </div>
             </div>
