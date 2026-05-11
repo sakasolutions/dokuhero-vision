@@ -2,10 +2,23 @@
  * Landing — nur Header + Hero. Bewusst reduziert: System-Sans, kaum Dekoration.
  */
 
+import { useEffect, useState } from 'react';
+
 const FONT =
   'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
 export default function Landing() {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)').matches : false
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const handler = () => setIsDesktop(mq.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
   const goOAuth = () => {
     window.location.href = '/api/auth/google';
   };
@@ -110,12 +123,22 @@ export default function Landing() {
 
       <main
         style={{
-          maxWidth: '640px',
+          maxWidth: isDesktop ? '1040px' : '640px',
           margin: '0 auto',
           padding: 'clamp(48px, 12vw, 88px) 24px 80px',
           boxSizing: 'border-box',
         }}
       >
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: isDesktop ? 'row' : 'column',
+            alignItems: isDesktop ? 'center' : 'stretch',
+            justifyContent: 'space-between',
+            gap: isDesktop ? '56px' : '0px',
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
         <p
           style={{
             margin: 0,
@@ -124,7 +147,7 @@ export default function Landing() {
             color: '#64748b',
             letterSpacing: '0.04em',
             textTransform: 'uppercase',
-            textAlign: 'center',
+            textAlign: isDesktop ? 'left' : 'center',
           }}
         >
           Dokumente mit KI
@@ -133,8 +156,8 @@ export default function Landing() {
         <h1
           style={{
             margin: '20px 0 0',
-            textAlign: 'center',
-            fontSize: 'clamp(2rem, 7vw, 2.875rem)',
+            textAlign: isDesktop ? 'left' : 'center',
+            fontSize: isDesktop ? '54px' : 'clamp(2rem, 7vw, 2.875rem)',
             fontWeight: 600,
             letterSpacing: '-0.038em',
             lineHeight: 1.12,
@@ -147,12 +170,12 @@ export default function Landing() {
         <p
           style={{
             margin: '20px auto 0',
-            textAlign: 'center',
+            textAlign: isDesktop ? 'left' : 'center',
             fontSize: '17px',
             fontWeight: 400,
             color: '#64748b',
             lineHeight: 1.55,
-            maxWidth: '480px',
+            maxWidth: isDesktop ? '520px' : '480px',
           }}
         >
           Foto oder PDF — die KI erkennt Inhalt und Ordner. Sortiert, durchsuchbar, bei dir gespeichert.
@@ -162,12 +185,12 @@ export default function Landing() {
           style={{
             marginTop: '36px',
             display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'stretch',
+            flexDirection: isDesktop ? 'row' : 'column',
+            alignItems: isDesktop ? 'center' : 'stretch',
             gap: '10px',
-            maxWidth: '340px',
-            marginLeft: 'auto',
-            marginRight: 'auto',
+            maxWidth: isDesktop ? '520px' : '340px',
+            marginLeft: isDesktop ? 0 : 'auto',
+            marginRight: isDesktop ? 0 : 'auto',
           }}
         >
           <button
@@ -183,6 +206,7 @@ export default function Landing() {
               borderRadius: '10px',
               cursor: 'pointer',
               fontFamily: FONT,
+              flex: isDesktop ? '0 0 auto' : '0 0 auto',
             }}
           >
             Mit Google fortfahren
@@ -191,8 +215,8 @@ export default function Landing() {
             type="button"
             onClick={scrollHow}
             style={{
-              border: 'none',
-              background: 'transparent',
+              border: isDesktop ? '1px solid rgba(15, 23, 42, 0.10)' : 'none',
+              background: isDesktop ? '#fff' : 'transparent',
               color: '#475569',
               fontWeight: 500,
               fontSize: '15px',
@@ -209,7 +233,7 @@ export default function Landing() {
         <p
           style={{
             margin: '28px 0 0',
-            textAlign: 'center',
+            textAlign: isDesktop ? 'left' : 'center',
             fontSize: '12px',
             fontWeight: 400,
             color: '#94a3b8',
@@ -218,6 +242,132 @@ export default function Landing() {
         >
           Keine Kreditkarte · DSGVO · Deutschland 🇩🇪
         </p>
+          </div>
+
+          {isDesktop ? (
+            <div style={{ width: '420px', flexShrink: 0 }}>
+              <div
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid rgba(15, 23, 42, 0.08)',
+                  borderRadius: '16px',
+                  boxShadow: '0 18px 50px rgba(15, 23, 42, 0.08)',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    padding: '14px 14px 10px',
+                    borderBottom: '1px solid rgba(15, 23, 42, 0.06)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                    <div
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '8px',
+                        background: '#6366f1',
+                        color: '#fff',
+                        fontWeight: 700,
+                        fontSize: '15px',
+                        display: 'grid',
+                        placeItems: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      D
+                    </div>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                      Upload
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>Live Preview</span>
+                </div>
+
+                <div style={{ padding: '14px' }}>
+                  <div
+                    style={{
+                      background: '#f8fafc',
+                      border: '1px solid rgba(15, 23, 42, 0.06)',
+                      borderRadius: '14px',
+                      padding: '14px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
+                          Rechnung · IHK
+                        </p>
+                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                          Betrag erkannt: € 1.460 · Frist: 03.06
+                        </p>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '12px',
+                          color: '#16a34a',
+                          fontWeight: 700,
+                          background: 'rgba(34,197,94,0.10)',
+                          border: '1px solid rgba(34,197,94,0.25)',
+                          padding: '6px 10px',
+                          borderRadius: '999px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        Abgelegt ✓
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div
+                      style={{
+                        border: '1px solid rgba(15, 23, 42, 0.06)',
+                        background: '#fff',
+                        borderRadius: '14px',
+                        padding: '12px',
+                      }}
+                    >
+                      <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>Kategorie</p>
+                      <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
+                        Rechnungen
+                      </p>
+                    </div>
+                    <div
+                      style={{
+                        border: '1px solid rgba(15, 23, 42, 0.06)',
+                        background: '#fff',
+                        borderRadius: '14px',
+                        padding: '12px',
+                      }}
+                    >
+                      <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>Speicher</p>
+                      <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
+                        Drive / Tresor
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: '12px', height: '10px', borderRadius: '999px', background: '#eef2ff' }}>
+                    <div
+                      style={{
+                        width: '62%',
+                        height: '100%',
+                        borderRadius: '999px',
+                        background: '#6366f1',
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </main>
 
       <div id="how-it-works" style={{ scrollMarginTop: '72px' }} aria-hidden="true" />
