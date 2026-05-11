@@ -5,7 +5,7 @@ import Documents from './pages/Documents';
 import FolderView from './pages/FolderView';
 import Impressum from './pages/Impressum';
 import Inbox from './pages/Inbox';
-import Login from './pages/Login';
+import Landing from './pages/Landing';
 import Onboarding from './pages/Onboarding';
 import Settings from './pages/Settings';
 import Upload from './pages/Upload';
@@ -15,7 +15,7 @@ function App() {
     <div className="app-shell">
       <div className="app-shell__viewport">
         <Routes>
-          <Route path="/" element={<Login />} />
+          <Route path="/" element={<Landing />} />
           <Route path="/upload" element={<Upload />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/documents/folder/:category/:subcategory" element={<FolderView />} />
